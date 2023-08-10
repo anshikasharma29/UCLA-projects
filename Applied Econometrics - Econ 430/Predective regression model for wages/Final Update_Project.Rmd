@@ -1,0 +1,787 @@
+---
+title: 'ECON 430: Project 1'
+author: \emph{Aneri Patel, Anshika Sharma, Cristian Martinez, Roya Latifi}
+date: \emph{November 17, 2020}
+output:
+  pdf_document:
+    latex_engine: xelatex
+  fig_caption: yes
+  highlight: haddock
+  html_document: null
+  number_sections: yes
+  word_document: default
+  df_print: paged
+fontsize: 10.5pte
+fontfamily: mathpazo
+---
+
+```{r, echo=FALSE, warning=FALSE, message= FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60))
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library("fitdistrplus")
+library(pastecs)
+library(psych)
+library('ggplot2')
+library('ggthemes') 
+library('scales')
+library('dplyr') 
+library('mice')
+library('randomForest') 
+library('data.table')
+library('gridExtra')
+library('corrplot') 
+library('GGally')
+library('e1071')
+library(car)
+library(Rcpp)
+library(Amelia)
+library(corrplot)
+library(jtools)
+library(ggplot2)
+library(pastecs)
+library(psych)
+library(car)
+library(edgebundleR)
+library(tseries) 
+library(stargazer)
+library(multcomp)
+library(caret)
+library(tidyverse)
+library(boot)
+```
+
+\newpage
+
+
+# Data Description and Directory
+
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+library(AER)
+data(PSID1976)
+survey = PSID1976
+
+head(survey)
+#length(survey)
+#names(survey)
+library("writexl")
+write_xlsx(PSID1976,"C:\\Users\\anshi\\Desktop\\replication\\PSID1976.xlsx")
+```
+
+**Dataset:** PSID1976: Labor Force Participation Data
+
+**Description:** Cross-section data originating from the 1976 Panel Study of Income Dynamics (PSID), based on data for the previous year, 1975.
+
+**Purpose of the project:** 
+The following project explores family income dynamics in 1976. The subjects in the study were interviewed regarding the income generated in 1975. The focus of the analysis was to observe how wages of wives are affected by hours worked, years of education, wage of their husband, hours the husband worked, whether the husband attended college, and the marginal tax rate facing the wives. There were 753 observations with 428 participating the labor market. Although the data is over 40 years old, it continues to serve as an important reminder that family income dynamics still exists today, not only in the United States, but worldwide.
+
+
+**Data Directory:**
+A data frame containing 753 observations on 21 variables.
+
+1. participation: Did the individual participate in the labor force in 1975? (This is essentially wage > 0 or hours > 0.)
+
+2. hours: Wife's hours of work in 1975.
+
+3. youngkids: Number of children less than 6 years old in household.
+
+4. ldkids: Number of children between ages 6 and 18 in household.
+
+5. age: Wife's age in years.
+
+6. education: Wife's education in years.
+
+7. wage: Wife's average hourly wage, in 1975 dollars.
+
+8. repwage: Wife's wage reported at the time of the 1976 interview (not the   same as the 1975 estimated wage). To use the subsample with this wage, one needs to select 1975 workers with participation == "yes", then select only those women with non-zero wage. Only 325 women work in 1975 and have a non-zero wage in 1976.
+
+9. hhours: Husband's hours worked in 1975.
+
+10. hage: Husband's age in years.
+
+11. heducation: Husband's education in years.
+
+12. hwage: Husband's wage, in 1975 dollars.
+
+13. fincome: Family income, in 1975 dollars. (This variable is used to construct the property income variable.)
+
+14. tax: Marginal tax rate facing the wife, and is taken from published federal tax tables (state and local income taxes are excluded). The taxable income on which this tax rate is calculated includes Social Security, if applicable to wife.
+
+15. medication: Wife's mother's educational attainment, in years.
+
+16. feducation: Wife's father's educational attainment, in years.
+
+17. unemp: Unemployment rate in county of residence, in percentage points. (This is taken from bracketed ranges.)
+
+18. city: Factor. Does the individual live in a large city?
+
+19. experience: Actual years of wife's previous labor market experience.
+
+20. college: Factor. Did the individual attend college?
+
+21. hcollege: Factor. Did the individual's husband attend college?
+
+\newpage
+
+
+# 1: Variable Selection
+## a) Boruta Algorithm
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Results from the Boruta Algorithm", message=FALSE, error=FALSE, warning=FALSE}
+library(leaps)
+library(Boruta)
+
+boruta.train <- Boruta(wage~., data = survey, doTrace = 2)
+print(boruta.train)
+cat(getSelectedAttributes(boruta.train), sep = "\n")
+plot(boruta.train,las =2, cex.axis=0.75)
+#The following variables were suggested by Boruta Algorithm
+```
+\pagebreak 
+
+## b) Mallows Cp
+
+```{r, out.width="80%", fig.show="hold", fig.align="center", fig.cap="Results from Mallows Cp"}
+ss=regsubsets(wage~ hours + education + youngkids + oldkids + age +hhours + participation + education 
++ repwage+ hage+heducation + fincome + meducation + feducation + unemp 
++ city+ experience + college + hwage+ tax+ hcollege , method=c("exhaustive"),nbest=3,data=survey)
+subsets(ss,statistic="cp",legend=F,main="Mallows CP",col="steelblue4", ylim=c(0,10))
+```
+\pagebreak
+
+Mallow Cp Chooses:
+
+- hours
+
+- education
+
+- hhours
+
+- participationyes
+
+- repwage
+
+- fincome
+
+- hwage
+
+- tax
+
+
+## c) Preferred choice of predictors
+
+Based on the results in part (a) and (b), the following variables were selected (by with sub-setting the participation in the labor force in 1975 == yes)
+
+- wage (dependent variable)
+
+- hours  
+
+- education
+
+- hhours
+
+- hwage
+
+- tax
+
+- hcollege 
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+#New data-frame with 6 selected variables:
+wage = survey$wage[survey$participation=="yes"]
+hours = survey$hours[survey$participation=="yes"]
+education =survey$education[survey$participation=="yes"]
+hwage = survey$hwage[survey$participation=="yes"]
+tax = survey$tax[survey$participation=="yes"]
+hhours = survey$hhours[survey$participation=="yes"]
+hcollege = survey$hcollege[survey$participation=="yes"]
+
+data = data.frame("wage" = wage, 
+                        "hours" = hours , 
+                        "education" = education, 
+                        "hhours" = hhours, 
+                        "hwage" = hwage, 
+                        "tax" = tax, 
+                        "hcollege" =hcollege
+                         )
+```
+\newpage
+
+
+# 2: Descriptive Analysis
+## a) Univariate analysis
+
+Quantile-Quantile plots, histograms and scatterplots have been produced for non-factor variables. 
+For factor variables, we have used barplots.
+
+Overview on Categorical and Continuous variables: 
+
+```{r, fig.show="hold", fig.align="center"}
+#hcollege (husband's attendance to college)
+g1<- ggplot(data,aes(x=hcollege,y=wage,alpha=0.1, col=hcollege))+
+labs(title=paste("", names(hcollege)))+
+geom_jitter() 
+
+#tax (Marginal tax rate facing the wife)
+g2<- ggplot(data,aes(x=tax,y=wage,alpha=0.1, col=tax))+
+labs(title=paste("", names(tax)))+
+ geom_point() 
+
+#hwage (Husband's wage)
+g3<- ggplot(data,aes(x=hwage,y=wage,alpha=0.1, col=hwage))+
+labs(title=paste("", names(hwage)))+
+ geom_point()  
+
+#hhours (Husband's hours worked )
+g4<- ggplot(data,aes(x=hhours,y=wage,alpha=0.1, col=hhours))+
+labs(title=paste("", names(hhours)))+
+ geom_point() 
+
+#education (Wife's education in years.)
+g5<- ggplot(data,aes(x=education,y=wage,alpha=0.1, col=education))+
+labs(title=paste("", names(education)))+
+ geom_point() 
+
+
+#hours (Wife's hours of work)
+g6<- ggplot(data,aes(x=hours,y=wage,alpha=0.1, col=hours))+
+labs(title=paste("", names(hours)))+
+geom_point() 
+
+require(gridExtra)
+grid.arrange(g1, g2, g3, g4, g5, g6, ncol=2)
+
+```
+
+- hcollege: The barplot shows that the data consists of more wifes that their husband did not attend college. 
+
+- tax: From the plot, we observe that when wife's average hourly wage is the highest, they face a marginal tax rate around 0.67.
+
+- hwage: We observe from the plot that there is positive relationship with husband's wage and wife's wage. But there are some observations that altyhough the husband wage is high, wife's wage is very low. As need to work for wife is likely to decrease when the husband wage is high, this might I explain why we see low wages as they might be working less. 
+
+- education: Education and wife's wages show positive relationship as seen in the graph but wifes that have 12 years education have the highest wage in our data. 
+
+- hhours: Husband's hours worked in 1976=5 and wife wages have a positive relationship but there are outliers as well. 
+
+- hours: Wife's hours of work in 1975 has almost a positive relationship with wages but there are some outliers as well. There are some observations where wife's wage is very low but hours of work is very high. If the wife does not have the option to not to work maybe because the husbands' wage is not adequate enough, the wife will work for long hours even with low wages.
+
+
+
+Freedman’s and Diaconis (FD) was used to determine the number of bins in the histograms and the Cullen-frey graph was used to get the best fitted distributions.
+
+- Tax: 
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Descriptive Analysis for tax", warning=FALSE}
+#tax
+par(mfrow=c(2,2))
+
+#Histogram
+hist(tax, breaks = "FD",  col = "skyblue3", main = "Histogram of tax ", freq = FALSE)
+rug(tax)
+
+#Density Functions using Cullen-Frey Graph
+#descdist(tax, boot = 1000)
+fln <- fitdist(tax, "lnorm")
+plot.legend <- c("lnorm")
+denscomp(list(fln), legendtext = plot.legend,main = "Fitted Dist of tax")
+
+#Quantile Plots:
+fit_beta = fitdist(tax, "beta") 
+fit_lnorm = fitdist(tax, "lnorm")
+fit_norm  = fitdist(tax, "norm")
+plot.legend = c("beta",  "lnorm", "norm")
+qqcomp(list(fit_beta, fit_lnorm, fit_norm), legendtext = plot.legend,main = "Q-Q for tax")
+
+#Boxplot
+Boxplot(~tax, data=data, id=FALSE, main = "Boxplot for tax")
+```
+From Fig.4, the distribution for the tax variable seems balanced and normalized for the most part. However, there is a presence of some outliers on both the upper and lower tails. Apart from that, most of the values concentrated on the center. 
+
+
+- Hours: 
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Descriptive Analysis for hours",warning=FALSE}
+#hours
+par(mfrow=c(2,2))
+
+#Histogram
+hist(hours, breaks = "FD",  col = "skyblue3", main = "Histogram of hours ", probability = TRUE)
+lines(density(data$hours),lwd = 2, col ="navyblue")
+rug(hours)
+
+#Boxplot
+Boxplot(~hours, data=data, id=FALSE, main = "Boxplot for hours")
+
+#Density Functions using Cullen-Frey Graph
+#descdist(hours, boot = 1000)
+fln <- fitdist(hours, "logis")
+plot.legend <- c("logis")
+denscomp(list(fln), legendtext = plot.legend,main = "Fitted Dist of hours")
+
+#Quantile Plots:
+fit_logis = fitdist(hours, "logis") 
+fit_lnorm = fitdist(hours, "lnorm")
+fit_norm  = fitdist(hours, "norm")
+plot.legend = c("beta",  "lnorm", "norm")
+qqcomp(list(fit_logis, fit_lnorm, fit_norm), legendtext = plot.legend, main = "Q-Q for hours")
+```
+From density histogram and boxplot in Fig.5, we notice that are positively skewed (right skewed) indicating the presence of some outliers on the upper tail. 
+
+
+- Education:
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Descriptive Analysis for education", warning=FALSE}
+#education
+par(mfrow=c(1,2))
+
+#Density Functions using Cullen-Frey Graph
+#descdist(education, boot = 1000)
+fln <- fitdist(education, "norm")
+plot.legend <- c("norm")
+denscomp(list(fln), legendtext = plot.legend,main = "Fitted Dist of education")
+
+#Quantile Plots:
+fit_norm = fitdist(education, "norm") 
+fit_logis = fitdist(education, "logis")
+fit_lnorm = fitdist(education, "lnorm")
+
+
+plot.legend = c("norm",  "logis", "lnorm")
+qqcomp(list(fit_norm, fit_logis, fit_lnorm), legendtext = plot.legend,main = "Q-Q for education")
+
+
+```
+From fitted distribution and qqplot in Fig.5, it is seen that most of the observations are concentrated at 11-12 years of education.
+
+
+- Hhours: 
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Descriptive Analysis for hhours", warning=FALSE, out.width="80%"}
+#hhours
+par(mfrow=c(1,3))
+hist(hhours, breaks = "FD",  col = "skyblue3", main = "Histogram of hhours", freq=FALSE)
+lines(density(data$hhours),lwd = 2, col ="navyblue")
+rug(hhours)
+
+#Q-Q plot
+#descdist(hhours, boot = 1000)
+fit_norm = fitdist(hhours, "norm") 
+fit_logis = fitdist(hhours, "logis")
+plot.legend = c("norm",  "logis")
+qqcomp(list(fit_norm, fit_logis), legendtext = plot.legend,main = "Q-Q for hhours")
+
+#Boxplot
+Boxplot(~hhours, data=data, id=FALSE)
+
+```
+Figure 6 suggests that the variable hhours is positively skewed (right skewed) indicating the presence of some outliers, or influential observations on the upper tail. Apart from that, the histogram seems somewhat normalized with most of the values concentrated on the center. 
+
+
+- Hwage: 
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Descriptive Analysis for hwage", warning=FALSE, out.width="80%"}
+#hwage
+par(mfrow=c(1,3))
+hist(hwage, breaks = "FD",  col = "skyblue3", main = "Histogram of hwage")
+lines(density(data$hwage),lwd = 2, col ="navyblue")
+rug(hwage)
+
+#Density Functions using Cullen-Frey Graph
+#descdist(hwage, boot = 1000)
+fln <- fitdist(hwage, "lnorm")
+plot.legend <- c("norm")
+denscomp(list(fln), legendtext = plot.legend,main = "Fitted Dist of hwage")
+
+fit_norm = fitdist(hwage, "norm") 
+fit_logis = fitdist(hwage, "logis")
+fit_lnorm = fitdist(hwage, "lnorm")
+
+plot.legend = c("norm",  "logis", "lnorm")
+qqcomp(list(fit_norm, fit_logis, fit_lnorm), legendtext = plot.legend,main = "Q-Q for hwage")
+```
+Figure 7 suggests that the variable hwage is positively skewed (right skewed) indicating the presence of some outliers, or influential observations on the upper tail. Apart from that, the histogram seems somewhat normalized with most of the values concentrated on the center. 
+
+
+
+- Correlation Plot:
+
+```{r, out.width="85%", fig.show="hold", fig.align="center", fig.cap="Correlation Plot"}
+#Correlation Map
+#Split data into two dataset, 
+#one contains category vairable only, one contains numeric data only
+cat_var <- names(data)[which(sapply(data, is.factor))]
+numeric_var <- names(data)[which(sapply(data, is.numeric))]
+data_cat <- data[, cat_var]
+data_cont <- data[,numeric_var]
+
+
+corrplot(cor(data_cont), method="circle")
+```
+The variables hours and education seem to be important. Tax has a negative correlation with education, and with hwage. This could pose a problem of multi-collinearity.
+
+
+
+## b) Density Plots
+
+```{r, fig.show="hold", fig.align="center", fig.cap="Density Plots", warning=FALSE}
+library(car)
+par(mfrow=c(3,2))
+densityPlot(~ wage, data=data, xlab="wage", main="Density Plot for wage")
+densityPlot(~ hours, data=data, xlab="hours", main="Density Plot for hours")
+densityPlot(~ education, data=data, xlab="education", main="Density Plot for education")
+densityPlot(~ hhours, data=data, xlab="hhours", main="Density Plot for hhours")
+densityPlot(~ hwage, data=data, xlab="hwage", main="Density Plot for hwage")
+densityPlot(~ tax  , data=data, xlab="tax  ", main="Density Plot for tax  ")
+```
+\pagebreak
+
+
+## c) Transformations
+
+Identify if there are any non-linearities within your variables. What transformations
+should you perform to make them linear? What would happen if you included non-
+linear variables in your regression models without transforming them first?
+
+1. Dependent variable: wage
+
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE}
+#Checking if there is a need for transforming the dependent variable 
+symbox(~wage, data=data)
+```
+
+The symbox seems to be favoring a log transformation for our dependent variable in Figure 11. 
+Let's look at the histogram and see if transforming our dependent variable makes sense:
+
+```{r, out.width="85%", fig.show="hold", fig.align="center", warning=FALSE}
+par(mfrow=c(1,2))
+hist(data$wage,breaks = "FD", col = "skyblue3", main = "Histogram of wage", probability = TRUE)
+lines(density(data$wage),col="red3", lwd=4)
+
+hist(log(data$wage) ,breaks = "FD", col = "skyblue3", main = "Histogram of log wage", 
+probability = TRUE)
+lines(density(log(data$wage)),col="red3", lwd=4)
+
+```
+
+Figure 12 also suggests that Logarithm transformation is appropriate in this cases since our variable is skewed. The transformation spreads out the smaller values and compresses the larger ones, producing a more symmetric distribution.
+
+
+
+Scatter Plots for comparing wage with transformation (log wage) vs wage without transformation: 
+
+```{r, fig.show="hold", fig.align="center", warning=FALSE, out.width="85%"}
+#Wage
+scatterplotMatrix(~ wage + hours + education
+              +hhours + hwage+ tax+ hcollege ,smooth=FALSE, ellipse=list(levels=0.5))
+
+#Log- wage
+scatterplotMatrix(~ log(wage) + hours + education
+              +hhours + hwage+ tax+ hcollege ,smooth=FALSE, ellipse=list(levels=0.5))
+
+```
+Scatterplots are also in favor of log transformation for our dependent variable. 
+
+
+Testing to see if a transformation is needed and if it is needed, transform it:
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+BoxCox = powerTransform(cbind(wage, hours, education, hwage, 
+tax, hhours)~ hcollege, data = data, family = "bcPower")
+summary(BoxCox)
+```
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+#Variables after transformation
+Wage_B = (wage)^(0.20)
+Hours_B = (hours)^(0.64)
+Huswage_B = (hwage)^(0.5)
+Tax_B = (tax)^(2.93)
+HusHours_B = (hhours)^(0.70)
+```
+Based on the results from the powerTransform, we decided to transform the wage variable by raising it to the power of 0.20. 
+
+- Scatterplots for Untransformed and Transformed Variables
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE}
+#hours
+#Untransformed 
+scatterplot(Wage_B ~ hours, data=data, xlab="wage",ylab="log(wage)", 
+main="Untransformed")
+
+#Transformed 
+scatterplot(Wage_B ~ Hours_B, data=data, xlab="hours", ylab="log(wage)", 
+main="Log-Log Plot",log="xy", boxplot=FALSE)
+
+#hwage
+#Untransformed 
+scatterplot(Wage_B ~ hwage, data=data, xlab="hwage",ylab="log(wage)", 
+main="Untransformed",boxplot=FALSE)
+
+#Transformed 
+scatterplot(Wage_B ~ Huswage_B, data=data, xlab="hwage^0.5", ylab="log(wage)", 
+main="Transformed Plot", boxplot=FALSE)
+
+
+#hhours
+#Untransformed 
+scatterplot(Wage_B ~ hhours, data=data, xlab="hhours",ylab="log(wage)", 
+main="Untransformed", boxplot=FALSE)
+
+#Transformed 
+scatterplot(Wage_B ~ HusHours_B, data=data, xlab="hhours^0.70", ylab="log(wage)", 
+main="Transformed Plot", boxplot=FALSE)
+```
+From the given figures, it is evident that the transformations are effective in normalizing the distribution, and making it a better fit for the model. 
+
+
+Regression model including non-linear variables without transforming them first:
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+mod.1= lm(wage~ hours + education + hhours + hwage + tax + hcollege, data=data)
+stargazer(mod.1, type = "text")
+```
+
+
+## d) Removing Outliers
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Update after Box Cox
+mod.2 = lm(Wage_B ~ Hours_B  + education + Huswage_B + Tax_B + 
+HusHours_B + hcollege, data = data)
+stargazer(mod.2, type="text")
+```
+
+
+
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="QQ Plot for outliers"}
+#qqplot
+qqPlot(mod.2$residuals, id=list(n=3))
+```
+
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Plots for outliers"}
+#Bonferroni-corrected t-test:
+outlierTest(mod.2)
+```
+
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Residuals Plot"}
+#Residual vs fitted
+plot(mod.2, 1)
+```
+
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Bubble Plot for Studentized Residuals"}
+#"bubble” plot of Studentized residuals 
+influencePlot(mod.2, id=list(n=3))
+```
+
+```{r, out.width="75%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Cooks Distance Plot"}
+#Cooks Distance plot
+influenceIndexPlot(mod.2, id=list(n=3),vars="Cook")
+```
+
+From the outliers test, the q-q plot, the residual plot and cook's distance plot, observations 126, 157, 185 and 408 seem to be the outliers, however, 157 seems to be the most influential outlier which could affect the accuracy of the predictive model. It has been removed from the model (mod.2), and the regression model is updated to mod.3:
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+mod.3<- update(mod.2, subset= -c(157))
+#, 185, 408126, 
+stargazer(mod.3, type="text")
+```
+\pagebreak
+
+Comparing all three regression models:
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+stargazer(mod.1, mod.2, mod.3, column.labels = c("Base Model", "Transformed Model", 
+"No Outliers Model"), type = "text", float= FALSE)
+```
+
+Removing the outliers yield different coefficient results for some of the variables. The significance levels for the both models stayed the same. The $R^2$ is highest, and AIC and BIC are the lowest in the mod.3.
+
+
+
+```{r, fig.show="hold", fig.align="center", warning=FALSE}
+#Comparing residuals graphs to understand if taking outliers yielded to an improvement
+###Pearson Residuals
+residualPlots(mod.2)
+residualPlots(mod.3)
+```
+Pearson Residuals: The p-value for Tukey Test is more than 5%. So we fail to reject the null that there is some pattern in the residuals. . 
+Looking at the residuals plots, the mod.3 seems to have the best residual plot.
+\pagebreak
+
+
+## e) Checking for NAs
+
+```{r, out.width="70%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Missingness Map"}
+#Looking at the data to see if we have any missing variables
+missmap(data[, -c(1, 11)], col = c("black", "red"), y.cex = 0.5, x.cex = 0.5)
+```
+Since there are no missing values in the variables selected, there is no need to omit any of them. The analysis can be continued. 
+\newpage
+
+
+# 3. Model Building
+
+• Evaluate transformations of variables:
+
+In part 2(c) boxcox transformation was used to transform the variables: tax, hours, hwage and hhours. The model (mod.1) was revised using new variables  to create mod.2. From the results in part 2, it is seen that after the transformation, the $R^2$ of the model increases and AIC and BIC decrease.  
+ 
+ 
+• Test for multicollinearity
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+vif(mod.2)
+vif(mod.3)
+```
+The VIF test was used to test both models for Multicollinearity. The models did not produce any VIF values greater than five, thus, the models do not have a Multicollinearity problem. 
+
+
+• Test for heteroskedasticity
+
+```{r, out.width="70%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Residual Plots"}
+#Plotting Residuals & Testing for Heteroskedasticity (Passed for mod.3)
+plot(mod.3,1)
+abline(h=0, col="red", lwd=2)
+ncvTest(mod.3)
+bptest(mod.3)
+```
+
+The next logical step is to test the model if Heteroskedasticity exists. The model passes the Non-constant Variance Test, but fails the Breusch-Pagan Test. However, since the model passed the Non-Constant Variance Test, we can continue with using Model 2 (mod.2) since the BP test is more restrictive than the NCV test. We acknowledge that the BPtest is the desired test to observe if Heteroskedasticity exists, but after careful consideration, we are going to proceed with model 2 (mod.2) and based on the results that will be observed below, Model 2 is the better model.
+ 
+
+
+• Test for model mis-specification
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+#Test For Model Misspecification (Model is Fine)
+
+resettest(mod.2, power= 2, type = "regressor") #Passed 
+resettest(mod.3, power= 2, type = "regressor") #Failed
+```
+
+The RAMSEY RESET test was performed on mod.2 and mod.3. In mod.2, with a p-value (0.1829) greater than 5%, we failed to reject the null hypothesis and conclude that the model is not misspecified. Thus, no further improvement is required in the model. However, the RESET test fails in mod.3, with a p-vale close to 0. 
+
+
+• Look at Cook’s distance Plot, Residuals Plot
+
+Both the residuals plot and cook's distance plot have been plotted in part 2 (d)
+```{r, out.width="70%", fig.show="hold", fig.align="center", warning=FALSE, fig.cap="Outlier plots", echo=FALSE}
+#Cooks Distance plot
+influenceIndexPlot(mod.2, id=list(n=3),vars="Cook")
+
+#Residual vs fitted
+plot(mod.2, 1)
+abline(h=0, col="red", lwd=2)
+```
+We acknowledge that observation 157 is an outlier. However, its removal in model 3 causes the model to fail the Ramsey RESET Test. So we do not remove it.
+
+
+• Use AIC and BIC for model selection
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+AIC(mod.1,mod.2,mod.3)
+BIC(mod.1,mod.2,mod.3)
+```
+
+Based on the results from both the AIC and BIC, Model 2 (mod.2) is the better model and will be confirmed as our finalized model for the remaining last steps of testing the robustness of the designated model. 
+
+
+• Evaluate the robustness of your coefficient estimates by bootstrapping your model. Provide a histogram of the bootstrapped estimates, and comment on the findings.
+
+```{r, fig.show="hold", fig.align="center", warning=FALSE}
+# Boostrapping the Model
+set.seed(2425)
+Betahat.Model = Boot(mod.2, R = 1000)
+summary(Betahat.Model)
+confint(Betahat.Model)
+hist(Betahat.Model)
+```
+
+After Bootstrapping the selected model with 1000 replications, histograms for each explanatory variable were derived. The explanatory variables exhibit a normal distribution with some explanatory variables having better fits than others. 
+
+In particular, hours worked by husbands appears to be shaped like a cone at the top. If the husband attended college also appears to be slightly off of truly being normally distributed. As the number of replications increase, we expect every explanatory variable to be close to be or be normally distributed based on the Strong Law of Large Numbers. 
+
+• Use cross-validation to evaluate your model performance
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+#Cross Validation Using 5 Fold
+#Data Prep for Five Fold & Cross Validation 
+BC = data.frame(
+  Wage_B = (wage)^(0.20),
+  Hours_B = (hours)^(0.64),
+  Huswage_B = (hwage)^(0.5),
+  Tax_B = (tax)^(2.93),
+  HusHours_B = (hhours)^(0.70),
+  HCollege = data$hcollege)
+
+
+#Model 2
+set.seed(1111)
+train.control = trainControl(method = "cv", number = 5)
+
+T_Model = train(Wage_B ~ + Hours_B + Huswage_B + HusHours_B + Tax_B
++ HCollege, data = BC, method = "lm", trControl = train.control) 
+
+print(T_Model)
+```
+
+Since we agreed to use Model 2 (mod.2) for our finalized model, we performed a 5-Fold Cross Validation to observe how our model performed and based on the output above, the model derived a RMSE of 0.1570 and a $R^2$ of 0.2469. 
+
+
+• Evaluate your model’s out of sample performance by splitting the data into testing and training sets, and predicting on the testing set
+
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Cross Validation using Training & Testing Sets#
+set.seed(1010)
+
+training.samples = wage%>%
+  createDataPartition( p = 0.8, list = FALSE)
+train.data = BC[training.samples, ]
+test.data = BC[-training.samples, ]
+
+Cross_Model = lm(Wage_B ~ Hours_B + Huswage_B + HusHours_B + Tax_B
++ HCollege, data = BC) 
+
+
+predictions = Cross_Model %>% predict(test.data)
+
+data.frame(
+  RMSE = RMSE(predictions, test.data$Wage),
+  R2 = R2(predictions, test.data$Wage)
+)
+```
+
+We separated Model 2 (mod.2) into a testing and training data set and performed a cross validation on the testing data set and a RMSE of 0.1445 and a $R^2$ of 0.3280 was derived. Overall, we are pleased with the results. 
+
+We also wanted to observe how the model perfomed when the data was split evenly :
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Cross Validation using Training & Testing Sets#
+set.seed(1010)
+
+training.samples = wage%>%
+  createDataPartition( p = 0.5, list = FALSE)
+train.data = BC[training.samples, ]
+test.data = BC[-training.samples, ]
+
+Cross_Model = lm(Wage_B ~ Hours_B + Huswage_B + HusHours_B + Tax_B
++ HCollege, data = BC) 
+
+
+predictions = Cross_Model %>% predict(test.data)
+
+data.frame(
+  RMSE = RMSE(predictions, test.data$Wage),
+  R2 = R2(predictions, test.data$Wage)
+)
+```
+Upon evenly splitting Model 2 (mod.2) into a testing and training data set and performing a cross validation on the testing data set, we observed a RMSE of 0.15737 and a $R^2$ of 0.2586 was derived.  
+
+
+• Note: Make sure to also discuss any relevant marginal effects estimated
+
+The first model above is the model we all agreed on based on exploring all possible relationships within the choice of explanatory variables we had available. As it can be seen, all our explanatory variables are statistically significant at the 1% level. For hours, it is based on total hours worked in 1975, thus, for every incremental increase in hours worked, we expect the wives' average hourly wage to negatively decrease by 0.001, holding all else constant, which could entail substitution and income effects related to the wives' incentive to supply hours to the labor supply. For education, for every year of education, we expect the average hourly wage of wives to increase by 42 cents, holding all else constant. For the wage of husbands, as their wages incrementally increase, we expect the wives' average hourly wage to decrease by 0.236 cents, holding all else constant. This makes economic sense because as the husband earns a higher wage, the wife can supply less hours to the labor market and not be required to get a higher paying job. For Tax, as wives earned a higher wage, thus, a higher income in most cases, the marginal tax rate negatively impacted the wage of wives. Similar to total hours the wives worked, the total hours that the husband worked also negatively impacted the average hourly wage of their wives by 0.001, holding all else constant. If the husband attended college, we expect the average hourly wage of their wives to decrease by .95 cents. The rationale is since the husband attended college, they may have a higher paying job, thus the wife doesn't have to work as much, thus reducing their desire for a higher wage and supply less hours to the market. The constant in this model is deemed irrelevant, but serves as a model stabilizer. It should be noted that based on the variables selected, an adjusted $R^2$ of 0.204 was derived.   
+

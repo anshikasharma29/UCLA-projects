@@ -1,0 +1,676 @@
+---
+title: "ECON 412: Final Project"
+author:
+- Alexander Ramos (ID:605657325)
+- Anshika Sharma (ID:305488635)
+- Cristian Martinez (ID:205642760)
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+    fig_height: 4
+    fig_caption: yes
+    highlight: default
+    number_sections: no
+    df_print: paged
+fontfamily: mathpazo
+fontsize: 10.5pt
+editor_options: null
+chunk_output_type: console
+---
+
+```{r, echo=FALSE, warning=FALSE, message= FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60))
+```
+
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+#rm(list=ls(all=TRUE))
+library(arules)
+library(caret)
+library(car)
+library(pastecs)
+library(dplyr)
+library(glmnet)
+library(tidyverse)    
+library(kernlab)      
+library(e1071)        
+library(ISLR)        
+library(RColorBrewer) 
+library(vip)
+library(psych)
+library(corrplot)
+library(randomForest)
+library(leaps)
+library(Boruta)
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+library(pROC)
+library(ROSE)
+library(ROCR)
+library(MASS)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+\newpage
+
+# Source code: 
+
+########################################
+# I. Data Exploration
+########################################
+
+```{r}
+#working directory: setwd("C:\\Users\\Admin\\Desktop\\UCLA\\MAE\\Econ 412_ Fundamentals of Big Data\\Data and code\\Final Project")
+
+#Reading the data
+df <- read.csv("C:/Users/User/Documents/Econometrics Directory/bankdata.csv")
+
+#Nan check
+sum(is.na(df))
+
+#features and target variables
+y <- as.factor(df$Bankrupt.)
+X <- subset(df, select = -c(Bankrupt.))
+
+
+#removing features with zero variances- when included in the the model, can cause problems like unstable models or, in some cases, can also cause the model to crash
+X= X[,-nearZeroVar(X)]
+
+df<- cbind(y,X)
+```
+
+```{r}
+summary(df$y)
+```
+
+total data points = 6819.
+
+# Balancing the data
+
+```{r}
+boruta.rose <- ROSE(y~., data = df, N = 6819, seed = 412)$data
+table(boruta.rose$y)
+head(boruta.rose)
+
+ggplot(boruta.rose, aes(x = y, fill = y)) + geom_bar(stat= "count") +theme_light()
+```
+
+########################################
+# II. Boruta Algorithm
+########################################
+
+# Running Boruta on Balanced data
+
+```{r, results='hide'}
+#https://www.analyticsvidhya.com/blog/2016/03/select-important-variables-boruta-package/
+
+#Running boruta
+Boruta_result <- Boruta(y~., data = boruta.rose, doTrace = 2)
+```
+
+```{r}
+#Plotting boruta
+par(mar=c(18, 5, 4, 0.05))
+plot(Boruta_result, xlab = "", xaxt = "n")
+lz<-lapply(1:ncol(Boruta_result$ImpHistory),function(i)
+Boruta_result$ImpHistory[is.finite(Boruta_result$ImpHistory[,i]),i])
+names(lz) <- colnames(Boruta_result$ImpHistory)
+Labels <- sort(sapply(lz,median))
+axis(side = 1,las=2,labels = names(Labels), 
+at = 1:ncol(Boruta_result$ImpHistory), cex.axis = 0.9)
+```
+
+```{r}
+print(getSelectedAttributes(Boruta_result))
+```
+
+```{r}
+#Boruta df- top 30 variables selected
+boruta.df <- attStats(Boruta_result)
+boruta.df <-boruta.df[order(-boruta.df$meanImp),]
+rownames(boruta.df)[1:30]
+
+#subsetting the data (using Boruta results)
+data_boruta<- df[rownames(boruta.df)[1:30]]
+data_boruta$Bankrupt.<- boruta.rose$y
+
+head(data_boruta)
+```
+
+```{r}
+#.writecsv(data,"/final_df_Imbalance.csv", row.names = FALSE)
+```
+
+# Checking for collinearity in 30 variables selected by Boruta 
+
+```{r}
+#Reading in the boruta df (after balancing)
+set.seed(412)
+final_df<- read.csv("C:/Users/User/Documents/Econometrics Directory/final_df_Imbalance.csv") #same as data_boruta
+colnames(final_df)
+
+# calculate correlation matrix
+correlationMatrix <- cor(final_df[,1:30])
+
+# find attributes that are highly corrected (ideally >0.75)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+
+# print indexes of highly correlated attributes
+print(highlyCorrelated)
+
+corrplot(correlationMatrix, method="square", type="lower", tl.cex = 0.7)
+
+#Dropping highly collinear variables
+data= final_df[-c(13, 14, 17, 16, 18, 25, 21, 19,  1)] 
+
+data$Bankrupt.<- as.factor(data$Bankrupt.)
+```
+
+```{r}
+#plotting the target variable
+ggplot(data, aes(x = Bankrupt., fill = Bankrupt.)) + geom_bar(stat= "count") +theme_light()
+
+summary(data$Bankrupt.)
+```
+
+```{r}
+#https://www.pluralsight.com/guides/normalizing-data-r
+
+#Splitting the data
+y <- data$Bankrupt.
+x <- subset(data, select = -c(Bankrupt.))
+
+# Split Data into Training and Testing in R 
+sample_size = floor(0.6*nrow(data))
+set.seed(777)
+
+# randomly split data in r
+picked = sample(seq_len(nrow(data)),size = sample_size)
+train =data[picked,]
+test =data[-picked,]
+
+# creating the training and testing set fro both dependent and independent variables
+X_train = subset(train, select = -c(Bankrupt.))
+X_test = subset(test, select = -c(Bankrupt.))
+
+y_train = train$Bankrupt.
+y_test = test$Bankrupt.
+```
+
+```{r}
+#Scaling feature data- using min-max scaler
+normalize = function(x) {
+  return((x-min(x))/(max(x)-min(x)))
+}
+
+X_train <- normalize(X_train)
+X_test<- normalize(X_test)
+```
+
+```{r}
+#Df after splitting and scaling 
+train_set= cbind(y_train, X_train)
+test_set= cbind(y_test, X_test)
+
+ggplot(train_set, aes(x = y_train, fill = y_train)) + geom_bar(stat= "count")
+ggplot(test_set, aes(x = y_test, fill = y_test)) + geom_bar(stat= "count")
+
+summary(train_set$y_train)
+summary(test_set$y_test)
+```
+
+# Modelling using Boruta 
+
+## Support Vector Machine (SVM)
+
+```{r}
+#Setting up k-fold cross validation
+library(caret)
+set.seed(412)
+train_control <- trainControl(method="cv", number=10)
+
+#Fit the model
+set.seed(412)
+svm_Radial <- train(y_train ~., data = train_set, method = "svmRadial", trControl=train_control, preProcess = c("center", "scale"), tuneLength = 10)
+
+#Print the best tuning parameter sigma and C that maximizes model accuracy
+svm_Radial$bestTune
+
+#View the model
+svm_Radial
+
+#Optimal C
+plot(svm_Radial)
+
+#Predicting using testing data
+y_pred = predict(svm_Radial, newdata = X_test)
+mean(y_pred == y_test) #accuracy
+
+#Confusion matrix to check the accuracy
+table(predicted=y_pred, actual=y_test)
+
+```
+
+```{r}
+# Fit Support Vector Machine model to data set
+library(e1071)
+library(pROC)
+svm_fit <- svm(y_train ~., data = train_set, kernel = "radial", cost = 16, sigma=0.9599636)
+
+y_test.roc <- as.numeric(y_test)
+test_roc = roc(as.numeric(y_pred) ~ y_test.roc, plot = TRUE, print.auc = TRUE)
+```
+
+## Logistc Regression
+
+```{r}
+length(y_test)
+```
+
+```{r}
+library(rpart)
+glm.fits=glm(y_train ~., data=train_set, family= "binomial")
+glm.probs=predict(glm.fits, X_test) # ,type="response")
+glm.pred=rep("0",2728)
+glm.pred[glm.probs>.5]="1" #threshold for logistic regression is playing the role of a boundary
+
+table(glm.pred,y_test)
+mean(glm.pred==y_test) #testing - accuracy 
+
+```
+
+```{r}
+library
+y_test.roc <- as.numeric(y_test)
+test_roc = roc(glm.pred ~ y_test.roc, plot = TRUE, print.auc = TRUE)
+```
+
+The following is the visual representation of the precision rate of logistic regression:
+```{r}
+predicted.data <- data.frame(probability.of.bank = glm.probs>0, bank = y_test)
+#sort data frame from low to high prob
+predicted.data <- predicted.data[
+  order(predicted.data$probability.of.bank, decreasing = FALSE),
+]
+#addding column showing rank of each sample from low to high prob
+predicted.data$rank <- 1:nrow(predicted.data)
+
+library(ggplot2)
+library(cowplot)
+ggplot(data = predicted.data, aes(x = rank, y = probability.of.bank)) +
+  geom_point(aes(color = bank), alpha = 1, shape = 4, stroke = 2)+
+  xlab("index")+
+  ylab("Predicted Prob of going bankrupt")
+
+```
+
+```{r}
+set.seed(2021)
+train.control =trainControl(method="cv", number=10,
+               verboseIter = TRUE)
+
+Logistic_CV = train(Bankrupt.~.,
+               method="glm",
+               trControl=train.control,
+               metric="accuracy",
+               data=data)
+```
+
+```{r}
+Logistic_CV
+```
+
+## K-Nearest Neighbours 
+
+```{r}
+# KNN Model
+
+levels(train_set$y_train) <- c("first_class", "second_class")
+
+trControl <- trainControl(method = "repeatedcv",
+                          number = 10,
+                          repeats = 3,
+                          classProbs = TRUE,
+                          summaryFunction = twoClassSummary)
+set.seed(222)
+fit <- train(y_train ~ .,
+             data = train_set,
+             method = 'knn',
+             tuneLength = 20,
+             trControl = trControl,
+             preProc = c("center", "scale"),
+             metric = "ROC",
+             tuneGrid = expand.grid(k = 1:60))
+```
+
+```{r}
+# Model Performance
+levels(test_set$y_test) <- c("first_class", "second_class")
+
+fit
+plot(fit)
+varImp(fit)
+pred <- predict(fit, newdata = test_set)
+confusionMatrix(pred, test_set$y_test)
+```
+
+## Quadratic Discrimiant Analysis
+
+```{r}
+#fitting the QDA model using the training data
+QDA_Model=qda(y_train~.,data = train_set)
+QDA_Model
+```
+
+```{r}
+# Confusion Matrix
+QDA_Class=predict(QDA_Model,test_set)$class
+confusionMatrix(QDA_Class, test_set$y_test)
+```
+
+```{r}
+# ROC Curve for QDA
+# ROC Curve for QDA
+y_test.roc <- as.numeric(y_test)
+plot(roc(QDA_Class, y_test.roc), print.auc = TRUE,main="ROC Curve of QDA (Boruta)")
+#QDA_roc = roc(QDA_Class ~ y_test.roc, plot = TRUE, print.auc = TRUE,main="ROC Curve of QDA (Boruta)")
+```
+
+```{r}
+# Cross Validating QDA Model
+set.seed(2021)
+train.control =trainControl(method="cv", number=10,
+                            verboseIter = TRUE)
+
+QDA_CV = train(y_train~.,
+                    method="qda",
+                    trControl=train.control,
+                    metric="accuracy",
+                    data=train_set)
+QDA_CV
+```
+
+---------------------------------------------------------------------------------------
+
+########################
+## III. Learning Vector Quanitzation 
+########################
+
+# LVQ for feature selection
+
+Uses balanced data (94 variables)- **DO NOT RUN**
+```{r}
+# ensure results are repeatable
+set.seed(412)
+
+# prepare training scheme
+control <- trainControl(method="cv", number=5)
+# train the model
+model <- train(y~., data=boruta.rose, method="lvq", preProcess="scale", trControl=control)
+
+# estimate variable importance
+importance <- varImp(model, scale=FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
+
+
+#Subsetting data with top 20 most important features 
+data= boruta.rose[c('Net.worth.Assets', 'Debt.ratio..', 'Persistent.EPS.in.the.Last.Four.Seasons','ROA.C..before.interest.and.depreciation.before.interest','Net.profit.before.tax.Paid.in.capital','Per.Share.Net.profit.before.tax..Yuan.Â..', 'ROA.A..before.interest.and...after.tax','ROA.B..before.interest.and.depreciation.after.tax', 'Net.Value.Per.Share..B.', 'Net.Value.Per.Share..A.', 'Net.Income.to.Total.Assets','Net.Value.Per.Share..C.', 'Working.Capital.to.Total.Assets','Retained.Earnings.to.Total.Assets','Current.Liability.to.Assets','Operating.Profit.Per.Share..Yuan.Â..','Operating.profit.Paid.in.capital','Current.Liability.to.Current.Assets','Tax.rate..A.','Cash.Total.Assets')]
+
+
+```
+
+```{r}
+#OR- (run this)
+data= read.csv("C:/Users/User/Documents/Econometrics Directory/lvq_data.csv")
+colnames(data)
+data$Bankrupt.<- as.factor(data$Bankrupt.)
+```
+
+```{r}
+#https://www.pluralsight.com/guides/normalizing-data-r
+
+#Splitting the data
+y <- data$Bankrupt.
+x <- subset(data, select = -c(Bankrupt.))
+
+# Split Data into Training and Testing in R 
+sample_size = floor(0.6*nrow(data))
+set.seed(777)
+
+# randomly split data in r
+picked = sample(seq_len(nrow(data)),size = sample_size)
+train =data[picked,]
+test =data[-picked,]
+
+# creating the training and testing set fro both dependent and independent variables
+X_train = subset(train, select = -c(Bankrupt.))
+X_test = subset(test, select = -c(Bankrupt.))
+
+y_train = train$Bankrupt.
+y_test = test$Bankrupt.
+```
+
+```{r}
+#Scaling feature data- using min-max scaler
+normalize = function(x) {
+  return((x-min(x))/(max(x)-min(x)))
+}
+
+X_train <- normalize(X_train)
+X_test<- normalize(X_test)
+```
+
+```{r}
+#Df after splitting and scaling 
+train_set= cbind(y_train, X_train)
+test_set= cbind(y_test, X_test)
+
+ggplot(train_set, aes(x = y_train, fill = y_train)) + geom_bar(stat= "count")
+ggplot(test_set, aes(x = y_test, fill = y_test)) + geom_bar(stat= "count")
+
+summary(train_set$y_train)
+summary(test_set$y_test)
+```
+
+
+# Modelling using Boruta 
+
+## Support Vector Machine (SVM)
+
+```{r}
+#Setting up k-fold cross validation
+library(caret)
+set.seed(412)
+train_control <- trainControl(method="cv", number=10)
+
+#Fit the model
+set.seed(412)
+svm_Radial <- train(y_train ~., data = train_set, method = "svmRadial", trControl=train_control, preProcess = c("center", "scale"), tuneLength = 10)
+
+#Print the best tuning parameter sigma and C that maximizes model accuracy
+svm_Radial$bestTune
+
+#View the model
+svm_Radial
+
+#Optimal C
+plot(svm_Radial)
+
+#Predicting using testing data
+y_pred = predict(svm_Radial, newdata = X_test)
+mean(y_pred == y_test) #accuracy
+
+#Confusion matrix to check the accuracy
+table(predicted=y_pred, actual=y_test)
+
+```
+
+```{r}
+# Fit Support Vector Machine model to data set
+library(e1071)
+library(pROC)
+svm_fit <- svm(y_train ~., data = train_set, kernel = "radial", cost = 8, sigma=0.03811891)
+
+y_test.roc <- as.numeric(y_test)
+test_roc = roc(as.numeric(y_pred) ~ y_test.roc, plot = TRUE, print.auc = TRUE)
+```
+
+
+## Logistc Regression
+
+
+```{r}
+length(y_test)
+```
+
+```{r}
+library(rpart)
+glm.fits=glm(y_train ~., data=train_set, family= "binomial")
+glm.probs=predict(glm.fits, X_test) # ,type="response")
+glm.pred=rep("0",2728)
+glm.pred[glm.probs>.5]="1" #threshold for logistic regression is playing the role of a boundary
+
+table(glm.pred,y_test)
+mean(glm.pred==y_test) #testing - accuracy 
+```
+
+```{r}
+library
+y_test.roc <- as.numeric(y_test)
+test_roc = roc(glm.pred ~ y_test.roc, plot = TRUE, print.auc = TRUE)
+```
+
+The following is the visual representation of the precision rate logistic regression:
+```{r}
+predicted.data <- data.frame(probability.of.bank = glm.probs>0, bank = y_test)
+#sort data frame from low to high prob
+predicted.data <- predicted.data[
+  order(predicted.data$probability.of.bank, decreasing = FALSE),
+]
+#addding column showing rank of each sample from low to high prob
+predicted.data$rank <- 1:nrow(predicted.data)
+
+library(ggplot2)
+library(cowplot)
+ggplot(data = predicted.data, aes(x = rank, y = probability.of.bank)) +
+  geom_point(aes(color = bank), alpha = 1, shape = 4, stroke = 2)+
+  xlab("index")+
+  ylab("Predicted Prob of going bankrupt")
+```
+
+```{r}
+set.seed(2021)
+train.control =trainControl(method="cv", number=10,
+               verboseIter = TRUE)
+
+Logistic_CV = train(Bankrupt.~.,
+               method="glm",
+               trControl=train.control,
+               metric="accuracy",
+               data=data)
+```
+
+```{r}
+Logistic_CV
+```
+
+## K-Nearest Neighbours 
+
+```{r}
+# KNN Model
+
+levels(train_set$y_train) <- c("first_class", "second_class")
+
+trControl <- trainControl(method = "repeatedcv",
+                          number = 10,
+                          repeats = 3,
+                          classProbs = TRUE,
+                          summaryFunction = twoClassSummary)
+set.seed(222)
+fit <- train(y_train ~ .,
+             data = train_set,
+             method = 'knn',
+             tuneLength = 20,
+             trControl = trControl,
+             preProc = c("center", "scale"),
+             metric = "ROC",
+             tuneGrid = expand.grid(k = 1:60))
+```
+
+```{r}
+# Model Performance
+levels(test_set$y_test) <- c("first_class", "second_class")
+
+fit
+plot(fit)
+varImp(fit)
+pred <- predict(fit, newdata = test_set)
+confusionMatrix(pred, test_set$y_test)
+```
+
+## Quadratic Discriminant Analysis
+
+```{r}
+#fitting the QDA model using the training data
+QDA_LVQ=qda(y_train~.,data = train_set)
+QDA_LVQ
+```
+
+```{r}
+# Confusion Matrix 
+QDA_Class_LVQ=predict(QDA_LVQ,test_set)$class
+confusionMatrix(QDA_Class_LVQ, test_set$y_test)
+```
+
+```{r}
+# ROC Curve for QDA
+y_test.roc <- as.numeric(y_test)
+QDA_roc_lqv = roc(QDA_Class_LQV ~ y_test.roc, plot = TRUE, print.auc = TRUE,main="ROC Curve of QDA (LVQ)")
+```
+
+```{r}
+# Cross Validating QDA
+train.control =trainControl(method="cv", number=10,
+                            verboseIter = TRUE)
+
+QDA_CV_LVQ = train(y_train~.,
+                    method="qda",
+                    trControl=train.control,
+                    metric="accuracy",
+                    data=train_set)
+QDA_CV_LVQ
+```
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

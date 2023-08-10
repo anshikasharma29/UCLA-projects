@@ -1,0 +1,693 @@
+---
+title: 'Economics 412 Group Project 1'
+author:
+- Alexander Ramos (ID:605657325)
+- Aneri Patel (ID:305642991)
+- Anshika Sharma (ID:305488635)
+- Cristian Martinez (ID:205642760 )
+
+date: "2021/04/30"
+output:
+  pdf_document:
+    toc: yes
+    fig_height: 4
+    fig_caption: yes
+    highlight: default
+    number_sections: no
+    df_print: paged
+  html_document:
+    toc: yes
+    df_print: paged
+fontfamily: mathpazo
+fontsize: 10.5pt
+editor_options: null
+chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Load necessary libraries to conduct analysis #
+library(readxl)
+library(stats)
+library(e1071)
+library(ISLR)
+library(readxl)
+library(psych)
+library(caret)
+library(dplyr)
+library(tidyverse)
+library(stargazer)
+library(readxl)
+library(car)
+library(lattice)
+library(broom)
+library(leaps)
+library(pastecs)
+library(gains)
+```
+
+########################################
+# I. Introduction
+########################################
+
+  With the Coronavirus pandemic still ongoing throughout most of the world, health research has stopped for many other diseases with the news consistently focused on the Coronavirus.  Stress, anxiety, depression, and other mental instabilities began to increase. Based on these behavior triggers, many partook in activities to pass the time, but also partook in activities involving drug and alcohol abuse. With this in mind, one cannot help, but be observant on what may result from the aftermath of the pandemic. However, focus should transition back to addressing other health issues that are still occurring irrespective of the Coronavirus pandemic. According to the World Health Organization (WHO) strokes are the 2nd leading cause of death globally and accounts for approximately 11% of total deaths. With this information in mind, we will focus our analysis on strokes, particularly on stroke prediction analysis.
+
+  The purpose of this project is to use a machine learning classifier model to determine what the probability is of sustaining a stroke based on a number of independent predictors. The classification model that will be used is the Naïve Bayes model to assist us in calculating the probability of sustaining a stroke based on conditioning for other metrics like age, gender, history of smoking, and etc. What follows next is the data description of our dataset, the methodology of the statistical machine learning model that was used, the results derived, and conclusion of the analysis.   
+
+########################################
+# II. Data Description
+########################################
+
+## Data Description 
+For the purpose of this project, a cross-sectional dataset was sourced from  Kaggle. The data contains information on 3246 patients. The dependent variable is, as expected, an indicator variable, for stroke predictions. There are 10 independent variables, both categorical and continuous, which cover a patient’s demographic information, their medical histories and factors like smoking habits which may contribute to a heart stroke. 
+
+Further descriptions of each variable are given below, followed by a summary table that showcases the descriptive statistics of each variable:
+
+## Data Directory:
+- **id**: unique identifier code for each patient
+- **gender**: classifies patients into "Male", "Female" or "Other"
+- **age**: age of the patient.
+- **hypertension**: This dummy variable takes the value 0 if the patient doesn't have hypertension, 1 if the patient has hypertension.
+- **heart_disease**: This dummy variable takes the value 0 if the patient doesn't have any heart diseases, 1 if the - patient has a heart disease.
+- **ever_married**: Dummy variable for whether an individual is married or not. “Yes” if the individual is married; “No” if the individual is not married.
+- **work_type**: "children", "Govt_jov", "Never_worked", "Private" or "Self-employed"
+- **Residence_type**: This variable states whether the person resides in a "Rural" or "Urban" area.
+- **avg_glucose_level**: This variable tells the average glucose level in blood.
+- **bmi**: body mass index: Body mass index is a value derived from the mass and height of a person. The BMI is defined as the body mass divided by the square of the body height, and is expressed in units of kg/m², resulting from mass in kilograms and height in metres. (Wikipedia)
+- **smoking_status**: This variable tells the smoking status of an individual. It takes the values: "formerly smoked", "never smoked", "smokes" or "Unknown".  ("Unknown" in smoking_status means that the information is unavailable for this patient). 
+- **stroke**:This is the dependent variable for our analysis. Dummy variable for whether an individual gets a stroke or not. 1 if the patient had a stroke or 0 if not.
+
+########################################
+# III. Methodology
+########################################
+
+The aim of this project was to build a supervised machine learning algorithm that predicts whether an individual would have a stroke or not. A Naive Bayes algorithm was used for training the model. Naive Bayes classifiers are collection algorithms based on Bayes’ Theorem who share a common principle- every pair of features being classified is independent of each other. The Naive Bayes algorithm assumes that the data has features that are independent of each other. If this assumption holds true, such algorithms are considered to be simple, but also fast, accurate and reliable.
+ 
+For this purpose, the 11 variables listed in the data description above were chosen.
+The variables that were already classified as factor variables in the data set include: gender, ever_married, work_type, residence_type, smoking status. Certain variables including age, hypertension, heart_disease, avg_glucose, stroke, bmi were converted into factor variables. The data set was then split into training (60%) and validation (40%) sets. Naive Bayes can also be used with continuous features but is more suited to categorical variables. And hence, the continuous variables were converted into categorical variables.
+
+The naiveBayes function from the e1071 library in R, was used on the independent variable to compute a-posterior probabilities of the categorical variables using Baye’s rule. And the predict function was used from the stats library in R  to make predictions based on the results of the fitted model. 
+
+Accuracy metrics:
+Confusion matrix and Lift chart were used as accuracy metrics for our analysis and to evaluate the performance of our model over the testing/validation data set. The confusion matrix was calculated for the training and validation data split. 
+
+########################################
+# IV. Results & Analysis
+########################################
+
+### 1. Read Data
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Loading data to perform analysis
+# Data = read_excel("C:/Users/alexd/Desktop/412 GP1/Stroke_Updated.xlsx")
+#Data = read_excel("C:/Users/User/Documents/Econometrics Directory/Stroke_Updated.xlsx")
+Data = read_excel("C:\\Users\\anshi\\iCloudDrive\\Econ 412\\Project1\\Stroke_Updated.xlsx")
+Data = na.omit(Data)
+head(Data)
+```
+
+Our data is a 3246x11 matrix, and it is a large enough dataset to be considered big data. The above six entries are the very first six entries in our dataframe.
+
+### 2. Checking data to determine if NAs exist 
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Checking for NAs in Data
+sum(is.na(Data)) #there are no NAs in data
+
+describe(Data)
+str(Data)
+```
+
+We confirmed that there exists no NAs in our dataset.
+
+### 3. Convert all Numerical variables to categorical
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Converting variables from numerical to categorical
+Data$age <- as.numeric(Data$age)
+Data$hypertension<- factor(Data$hypertension)
+Data$heart_disease <- factor(Data$heart_disease)
+Data$avg_glucose_level <- as.numeric(Data$avg_glucose_level)
+Data$stroke <- factor(Data$stroke)
+Data$bmi = as.numeric(Data$bmi)
+
+# Creating group bins based on health standards (Recommended from CDC)
+Data$avg_glucose_level = ifelse(Data$avg_glucose_level>=55.12 & Data$avg_glucose_level<=126,"Normal","Abnormal")
+
+
+Data<- Data %>% mutate(bmi=case_when(
+  bmi>=11.5 & bmi<=18.0 ~ "Underweight",
+  bmi>=18.5 & bmi<=24.9 ~ "Healthy",
+  bmi>=25.0 & bmi<=29.9 ~ "Overweight",
+  bmi>=30 ~ "Obese"))
+
+Data<- Data %>% mutate(age=case_when(
+  age>=10 & age<=20 ~ "10-20",
+  age>=21 & age<=30 ~ "21-30",
+  age>=31 & age<=40 ~ "31-40",
+  age>=41 & age<=50 ~ "41-50",
+  age>=51 & age<=60 ~ "51-60",
+  age>=61 & age<=70 ~ "61-70",
+  age>=71 ~ "71 and above"))
+```
+
+
+We converted six variables into categorical variables. The converted variables are as follows:
+
+- age
+- avg_glcouse_level
+- hypertension
+- heart_disease
+- stroke
+- bmi
+
+However, for the variables age, ave_glucose_level, and bmi, we identified too many levels that make our analysis hardly readable. Hence, we set appropriate bins for the variables to depict a clear trend in each class. For the variable age, we grouped the level by every ten years. This helps to identify in what age group shows the high probability of getting a stroke as well as the gradual increase in the risk of getting a stroke in the age group. Similarly, we applied bins to bmi and ave_glucose_level. To illustrate the risk of having a stroke at different levels of bmi and ave_glucose_level, we have set the bins according to the grouping definition from the CDC and WHO.       
+
+### 4. Confirms that all variables are now categorical
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+str(Data) # Confirms that all variables are now categorical
+```
+
+Of the above variables, hypertension, heart_disease, and stroke are converted into an indicator variable that takes a value of either 0 or 1. Other variables are sorted by bins to represent a specific group, as explained in the previous section.
+
+By using the data that we wrangled, we will expand our analysis. 
+
+## A. Use all the features to construct a classification model
+
+### 5. Creating Testing/Validating dataset
+
+We split the dataset into two different sets, the training set, and the testing set. The training test will be used for building our model components that predict whether a person with specific characteristics and conditions will suffer from a stroke.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Classifying training and validation partitions
+set.seed(412)
+Selected.Var <- c(1,2,3,4,5,6,7,8,9,10,11) # Use every indepedent categorical variable
+train.index <- sample(c(1:dim(Data)[1]), dim(Data)[1]*0.6)  # Splitting the dataset into 6:4 
+train.df <- Data[train.index, Selected.Var]
+valid.df <- Data[-train.index, Selected.Var]
+```
+
+### 6. Run naive Bayes
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Performing and observing results from NaiveBayes
+Data.nb <- naiveBayes(train.df$stroke ~ ., data = train.df)
+Data.nb
+```
+
+Our learning algorithm, Naive Bayes, is on the training set from part 5. The result exhibits the relationship between each variable and the probability of having a stroke. Hence, we will discuss the noteworthy findings for each feature against our dependent variable, stroke, in our training set.
+
+General facts about the training sample:
+
+- Only 5.45% of the people in our training set had a stroke.
+
+- Of the ones who had a stroke, 45.5% are male, whereas 39.8% are male in the group of people who did not have a stroke.
+
+From the above facts, we can say that males tend to yield a higher chance of getting a stroke than females.
+
+**age**:
+
+Observing stroke from people under the age of 40 is extremely rare as the probability of getting a stroke for those particular groups is nearly 0% in our training set. Of those who had a stroke, only 3.5% of them are from the age group of the '30s. For the '40s, 6.3% of the people who had a stroke are from the age group of 41 years old to 50 years old. The age group of 51-60 and 61 to 70 accounts for nearly 40% of those who had a stroke. Lastly, we found out that 50% of the stroke cases are from 71 and above. 
+
+Therefore, it is reasonable to say that aging is one of the critical factors that increase the risk of having a stroke as age goes up.
+
+**hypertension**:
+
+In our training set, the proportion of the people who have hypertension is 9.8% among people who did not have a stroke in life. Meanwhile, 34.8 % of the people who had a stroke in life have hypertension. Therefore, hypertension increases the risk of having a stroke drastically.
+
+**heart_disease**:
+
+In our training set, the proportion of the people who have heart disease is 4.9% among people who did not have a stroke in life. Meanwhile, 19.6% of the people who had a stroke in life have heart disease. Therefore, heart disease increases the risk of having stroke drastically.
+
+**ever_married**:
+
+In our training set, the proportion of the people who have ever married is 75.1% among people who did not have a stroke in life. Meanwhile, 90.2% of the people who had a stroke in life have married at least once in life. Therefore, indirectly we can see that getting married increases the risk of having a stroke.
+
+**work_type**:
+
+In our training set, roughly 65.3% of the people are working in the private sector, and we also see about 17.7% of the people are working in the self-employed sector. While those two sectors account for nearly 83% of all workforce, the proportion of people with stroke is also 85% from those sectors. Except for those who are working in childcare and never worked, we see that the similar proportion to the risk of having a stroke and the proportion to the corresponding job occupations among the people in our training set. Interestingly, the number of stroke cases observed from those who are in childcare and never worked account for almost 0%
+
+**Residence_type**:
+
+In our training set, the proportion of the people who live in an urban area is 49.7% among the group of people who did not have a stroke in life. Meanwhile, 50.0% of the people who had a stroke in life live in an urban area. Therefore, living in an urban area increases the risk of having a stroke by a little in our training set.
+
+**avg_glcouse_level**:
+
+WHO defines the normal average glucose level to be in the range of 55.12 to 126 mg/dL. While we divided the group of people into two groups, abnormal and normal, we identified that about 80% of the people have the average glucose level in the normal range for those who did not have a stroke. However, for those who had a stroke, only 53% of them are in the range of the normal average glucose level. It indicates that the high average glucose level is associated with a higher probability of having a stroke in life than those in the normal range. 
+
+**bmi**:
+
+We identified four groups of people according to the definition of bmi from CDC. The underweight people yields about 0% in the group of people who had a stroke. In contrast, the people under obese accounts for nearly 46.2% of the entire stroke cases. Following the obese group, overweight people occupy about 38.4%, and healthy people yield 15.2% of the stroke cases in our training set. Hence, the increase in weight has a positive effect on the risk of having a stroke in life. 
+
+**smoking_status**:
+
+From our training set, the proportion of the people who do not smoke is 55.2% in the group of people who did not have a stroke, whereas it is 48.2% for the people who had a stroke. Also, the data shows that the person who formerly smoked and smoke does indicate a higher proportion in the group of the people who had a stroke than did not have a stroke.
+
+### 7. Examine the relationship between heart disease and stroke
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Generating predicitons for probabilities and class 
+prop.table(table(train.df$stroke, train.df$heart_disease), margin = 1)
+
+
+pred.prob <- predict(Data.nb, newdata = valid.df, type = "raw")
+
+
+pred.class <- predict(Data.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$stroke, predicted = pred.class, pred.prob)
+```
+
+The above result indicates that about 19.7% of the people who have had a stroke also had heart disease. Of those who did not have a stroke, only about 4.9% of people have heart disease. Hence, having heart disease increases the chance of getting a stroke by far. We wanted to observe how conditioning for heart disease would change the probability of developing a stroke because we collectively felt that heart disease could be a strong indicator of sustaining a stroke.
+
+### 8. Training and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Training sample metrics 
+pred.class <- predict(Data.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$stroke)
+```
+
+The statistics from the confusion matrix show that the model accuracy is 92.8% for the training dataset. Kappa is around 0.22, and it indicates that the samples used in the model are substantially representative of the variables measured. The low kappa is the result of applying bins to some of our variables. 
+
+The value of sensitivity, 0.97, tells us how much of the actual stroke was detected by the model’s prediction over the training sample set. The value of specificity, 0.22, shows that how much the model correctly predicted the true negative. The probability of detecting a true positive is around 97%. Hence, our model’s predictive accuracy is very satisfactory for the training set to correctly classifying whether a person had a stroke or not.
+
+### 9. Validation and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Validation sample metrics
+pred.class <- predict(Data.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$stroke)
+```
+
+The statistics from the confusion matrix show that the model accuracy is 91.5% for the testing dataset. Kappa is around 0.11, and it indicates that the samples used in the model are substantially representative of the variables measured. The low kappa is the result of applying bins to some of our variables. 
+
+The value of sensitivity, 0.95, tells us how much of the actual stroke was detected by the model’s prediction over the testing sample set. The value of specificity, 0.16, shows that how much the model correctly predicted the true negative. The probability of detecting a true positive is around 95%. Hence, our model’s predictive accuracy is very satisfactory for the testing set to correctly classifying whether a person had a stroke or not.
+
+### 10. Plot the Lift Chart
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Creating Lift Chart
+gain <- gains(ifelse(valid.df$stroke=="1",1,0), pred.prob[,2], groups=2000)
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$stroke==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$stroke== 1))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+The plot exhibits a lift curve. Lift represents the amount of information gained by using a machine learning model instead of randomly guessing. As our gain curve is above the baseline, we can say that our machine learning algorithm is more efficient than a random model. In other words, there exists a positive relationship between the dependent variable and the features.
+
+## B. Case study: dropping gender, ever married, and work type in our model
+
+We conducted exactly the same analysis process we did in part a. Therefore, we will briefly explain what is significant in this case study.
+
+### 1. Run Native Bayes
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Creating Testing/Validating dataset  
+Selected.Var <- c(2,3,4,7,8,9,10,11) # Use every variable expect for gender, ever married, work type
+train.index <- sample(c(1:dim(Data)[1]), dim(Data)[1]*0.6)  
+train.df <- Data[train.index, Selected.Var]
+valid.df <- Data[-train.index, Selected.Var]
+
+
+# Run Naive Bayes
+Data.nb <- naiveBayes(stroke ~ ., data = train.df)
+Data.nb
+```
+
+The tendency identified in part a holds for each feature from the native Bayes probabilistic outcome.
+
+### 2. Training and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Classifying probabilities and classes 
+pred.prob <- predict(Data.nb, newdata = valid.df, type = "raw")
+
+
+pred.class <- predict(Data.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$stroke, predicted = pred.class, pred.prob)
+
+
+# Training sample metrics
+pred.class <- predict(Data.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$stroke)
+```
+
+For the testing dataset, while we dropped three features than the model in part a, the statistics from the confusion matrix show that the model accuracy is 94.4% for the training dataset. Kappa is around 0.17, and it indicates that the samples used in the model are substantially representative of the variables measured. The low kappa is the result of applying bins to some of our variables. 
+
+The value of sensitivity, 0.98, tells us how much of the actual stroke was detected by the model’s prediction over the training sample set. The value of specificity, 0.14, shows that how much the model correctly predicted the true negative. The probability of detecting a true positive is around 98%. Hence, our model’s predictive accuracy is very satisfactory for the training set to correctly classifying whether a person had a stroke or not. Also, we can say that the mode is performing better than the one from part a.
+
+### 3. Validation and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Validation sample metrics 
+pred.class <- predict(Data.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$stroke)
+```
+
+For the testing dataset, while we dropped three features than the model in part a, the statistics from the confusion matrix show that the model accuracy is 92.2% for the testing dataset. Kappa is around 0.09, and it indicates that the samples used in the model are substantially representative of the variables measured. The low kappa is the result of applying bins to some of our variables. 
+
+The value of sensitivity, 0.97, tells us how much of the actual stroke was detected by the model’s prediction over the testing sample set. The value of specificity, 0.09, shows that how much the model correctly predicted the true negative. The probability of detecting a true positive is around 97%. Hence, our model’s predictive accuracy is very satisfactory for the testing set to correctly classifying whether a person had a stroke or not. This result is similar to what we found out in part a.
+
+### 4. Plot the Lift Chart
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Creating Lift Chart
+gain <- gains(ifelse(valid.df$stroke=="1",1,0), pred.prob[,2], groups=1000)
+
+
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$stroke==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$stroke== 1))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+As our gain curve is above the baseline, we can say that our machine learning algorithm is more efficient than a random model. In other words, there exists a positive relationship between the dependent variable and the features. However, the gain chart is less bending outwards, and it tells that the model from part a is more efficient in gaining information. Namely, we can say that the model from part a is superior to the model from part b in terms of learning efficiency.
+
+## C. Case study: dropping gender, ever married, work type, bmi, and smoking status in our model
+
+We conducted exactly the same analysis process we did in parts A and B, but also drop additional predictors. Therefore, we will briefly explain what is significant in this case study.
+
+### 1. Run Naive Bayes
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Creating Testing/Validating dataset  
+Selected.Var <- c(2,3,4,7,8,11) # Use every variable expect for gender, ever married, work type, bmi, and smoking status
+train.index <- sample(c(1:dim(Data)[1]), dim(Data)[1]*0.6)  
+train.df <- Data[train.index, Selected.Var]
+valid.df <- Data[-train.index, Selected.Var]
+
+# Run Naive Bayes
+Data.nb <- naiveBayes(stroke ~ ., data = train.df)
+Data.nb
+```
+
+The tendency identified in parts A and B holds for each feature from the Native Bayes probabilistic outcome.
+
+### 2. Training and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Classifying probabilities and class
+pred.prob <- predict(Data.nb, newdata = valid.df, type = "raw")
+
+pred.class <- predict(Data.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$stroke, predicted = pred.class, pred.prob)
+
+
+# Training sample metrics 
+pred.class <- predict(Data.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$stroke)
+```
+
+For the training dataset, while we dropped five features than the model in part a, the statistics from the confusion matrix show that the model accuracy is 92.8% for the training dataset. Kappa is around 0.19, and it indicates that the samples used in the model are substantially representative of the variables measured. The low kappa is the result of applying bins to some of our variables. 
+
+The value of sensitivity, 0.97, tells us how much of the actual stroke was detected by the model’s prediction over the training sample set. The value of specificity, 0.18, shows that how much the model correctly predicted the true negative. The probability of detecting a true positive is around 97%. Hence, our model’s predictive accuracy is very satisfactory for the training set to correctly classifying whether a person had a stroke or not.
+
+### 3. Validation and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Validation sample metrics 
+pred.class <- predict(Data.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$stroke)
+```
+
+For the testing dataset, while we dropped five features than the model in part a, the statistics from the confusion matrix show that the model accuracy is 93.4% for the testing dataset. Kappa is around 0.13, and it indicates that the samples used in the model are substantially representative of the variables measured. The low kappa is the result of applying bins to some of our variables. 
+
+The value of sensitivity, 0.97, tells us how much of the actual stroke was detected by the model’s prediction over the testing sample set. The value of specificity, 0.14, shows that how much the model correctly predicted the true negative. The probability of detecting a true positive is around 97%. Hence, our model’s predictive accuracy is very satisfactory for the testing set to correctly classifying whether a person had a stroke or not. This result is similar to what we found out in part a.
+
+### 4. Plot the Lift Chart
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Creating Lift Chart
+gain <- gains(ifelse(valid.df$stroke=="1",1,0), pred.prob[,2], groups=1000)
+
+
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$stroke==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$stroke== 1))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+As our gain curve is above the baseline, we can say that our machine learning algorithm is more efficient than a random model. In other words, there exists a positive relationship between the dependent variable and the features. However, the gain chart is less bending outwards, and it tells that the model from part a is more efficient in gaining information. Namely, we can say that part c is superior to the model from parts a and b in terms of learning efficiency.
+
+
+########################################
+# V. Conclusion
+########################################
+In conclusion, after performing the NaiveBayes classification model on our data and segmenting age, BMI, and average glucose levels based on what the CDC classifies as healthy and unhealthy ranges, we derived results from a model that we collectively agree is robust and highly accurate. To determine the accuracy of our model, we created three different scenarios where we removed independent indicators to determine if the model could still efficiently predict the probability based on the remaining independent predictors. We first use every independent predictor in our dataset to observe how the model performs in terms of accuracy and report both a training and validation accuracy metric. We derived a training and validation accuracy of 92.80% and 91.54% respectively for our first case study. We then alter the model by removing gender, if the individual was ever married, and their work type and find that the training and validation accuracies increase for both with the training set deriving an accuracy of 94.40% and validation accuracy of 92.20%. We performed one last study where we removed gender, if the individual was ever married, work type, BMI, and their smoking status and found that the training accuracy was reported at 92.75% and validation was 93.44%. Collectively, we see that there is a trade-off in terms of how many independent predictors to use and believe that the more predictors that are used, the possibility of overfitting is present. We find that the last case derived the highest validation accuracy rate and the second case derived the highest training accuracy rate. Thus, we conclude that our model using the NaiveBayes algorithm is incredibly easy to perform yet generates strong results.
+
+########################################
+# VI. Future Work
+########################################
+The human body is a complex system that till this day is still the subject of heavy research, with strokes being one of the more complex diseases to understand. Our analysis is assuming that our predictors are independent of each other, but it can be argued that some of the predictors may be correlated with one another. Perhaps data on genetics can be the key to bridge the lack of understanding on why individuals who are healthy sustain a stroke and for those who we classify as “unhealthy” and should likely  sustain a stroke don’t. By collecting data on individual genetics, perhaps we could get closer to understanding the reasons why strokes occur. 
+
+########################################
+# VII. R Code Source
+########################################
+
+### 1. Read Data
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+Data = read_excel("C:/Users/alexd/Desktop/412 GP1/Stroke_Updated.xlsx")
+Data = na.omit(Data)
+head(Data)
+```
+
+### 2. Checking data to determine if NAs exist 
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+sum(is.na(Data)) #there are no NAs in data
+
+describe(Data)
+str(Data)
+```
+
+### 3. Convert all Numerical variables to categorical (Will change Age, BMI & Average glucose level)
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+Data$age <- as.numeric(Data$age)
+Data$hypertension<- factor(Data$hypertension)
+Data$heart_disease <- factor(Data$heart_disease)
+Data$avg_glucose_level <- as.numeric(Data$avg_glucose_level)
+Data$stroke <- factor(Data$stroke)
+Data$bmi = as.numeric(Data$bmi)
+
+# Creating group bins based on health standards (Recommended from CDC)
+Data$avg_glucose_level = ifelse(Data$avg_glucose_level>=55.12 & Data$avg_glucose_level<=126,"Normal","Abnormal")
+
+
+Data<- Data %>% mutate(bmi=case_when(
+  bmi>=11.5 & bmi<=18.0 ~ "Underweight",
+  bmi>=18.5 & bmi<=24.9 ~ "Healthy",
+  bmi>=25.0 & bmi<=29.9 ~ "Overweight",
+  bmi>=30 ~ "Obese"))
+
+Data<- Data %>% mutate(age=case_when(
+  age>=10 & age<=20 ~ "10-20",
+  age>=21 & age<=30 ~ "21-30",
+  age>=31 & age<=40 ~ "31-40",
+  age>=41 & age<=50 ~ "41-50",
+  age>=51 & age<=60 ~ "51-60",
+  age>=61 & age<=70 ~ "61-70",
+  age>=71 ~ "71 and above"))
+```
+
+### 4. Confirms that all variables are now categorical
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+str(Data) # Confirms that all variables are now categorical
+```
+
+## a. Use all the features to construct a classification model
+
+### 5. Creating Testing/Validating dataset
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+Selected.Var <- c(1,2,3,4,5,6,7,8,9,10,11) # Use every indepedent categorical variable
+train.index <- sample(c(1:dim(Data)[1]), dim(Data)[1]*0.6)  # Splitting the dataset into 6:4 
+train.df <- Data[train.index, Selected.Var]
+valid.df <- Data[-train.index, Selected.Var]
+```
+
+### 6. Run naive Bayes
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+Data.nb <- naiveBayes(train.df$stroke ~ ., data = train.df)
+Data.nb
+```
+
+Our learning algorithm, Naive Bayes, is on the training set from part 5. The result exhibits the relationship between each variable and the probability of having a stroke. Hence, we will discuss the no
+
+### 7. Examine the relationship between heart disease and stroke
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+prop.table(table(train.df$stroke, train.df$heart_disease), margin = 1)
+
+
+pred.prob <- predict(Data.nb, newdata = valid.df, type = "raw")
+
+
+pred.class <- predict(Data.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$stroke, predicted = pred.class, pred.prob)
+```
+
+### 8. Training and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+df[valid.df$work_type == "Private" & valid.df$bmi == 35 & valid.df$Residence_type == "Rural" & 
+     valid.df$heart_disease == 1 & valid.df$age == 35 & valid.df$gender == "Male" & 
+valid.df$ever_married == "No" & valid.df$avg_glucose_level == 200 & valid.df$smoking_status == "Yes"
+& valid.df$hypertension == 1,]
+
+# Training
+pred.class <- predict(Data.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$stroke)
+```
+
+### 9. Validation and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+pred.class <- predict(Data.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$stroke)
+```
+
+### 10. Plot the Lift Chart
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+gain <- gains(ifelse(valid.df$stroke=="1",1,0), pred.prob[,1], groups=2000)
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$stroke==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$stroke== 1))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+## b. Case study: dropping gender, ever married, and work type in our model
+
+### 1. Run Native Bayes
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+# Creating Testing/Validating dataset  
+Selected.Var <- c(2,3,4,7,8,9,10,11) # Use every variable expect for gender, ever married, work type
+train.index <- sample(c(1:dim(Data)[1]), dim(Data)[1]*0.6)  
+train.df <- Data[train.index, Selected.Var]
+valid.df <- Data[-train.index, Selected.Var]
+
+
+# Run Naive Bayes
+Data.nb <- naiveBayes(stroke ~ ., data = train.df)
+Data.nb
+```
+
+### 2. Training and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+pred.prob <- predict(Data.nb, newdata = valid.df, type = "raw")
+
+
+pred.class <- predict(Data.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$stroke, predicted = pred.class, pred.prob)
+
+
+# Training
+pred.class <- predict(Data.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$stroke)
+```
+
+### 3. Validation and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+# Validation
+pred.class <- predict(Data.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$stroke)
+```
+
+### 4. Plot the Lift Chart
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+gain <- gains(ifelse(valid.df$stroke=="1",1,0), pred.prob[,2], groups=1000)
+
+
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$stroke==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$stroke== 1))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+## c. Case study: dropping gender, ever married, work type, bmi, and smoking status
+
+### 1. Run Naive Bayes
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+# Creating Testing/Validating dataset  
+Selected.Var <- c(2,3,4,7,8,11) # Use every variable expect for gender, ever married, work type, bmi, and smoking status
+train.index <- sample(c(1:dim(Data)[1]), dim(Data)[1]*0.6)  
+train.df <- Data[train.index, Selected.Var]
+valid.df <- Data[-train.index, Selected.Var]
+
+# Run Naive Bayes
+Data.nb <- naiveBayes(stroke ~ ., data = train.df)
+Data.nb
+```
+
+### 2. Training and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+pred.prob <- predict(Data.nb, newdata = valid.df, type = "raw")
+table(pred.prob)
+
+pred.class <- predict(Data.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$stroke, predicted = pred.class, pred.prob)
+
+
+# Training
+pred.class <- predict(Data.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$stroke)
+```
+
+### 3. Validation and confusion matrix
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+# Validation
+pred.class <- predict(Data.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$stroke)
+```
+
+### 4. Plot the Lift Chart
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+gain <- gains(ifelse(valid.df$stroke=="1",1,0), pred.prob[,2], groups=1000)
+
+
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$stroke==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$stroke== 1))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+
+
+########################################
+# VIII. Reference
+########################################
+
+- Data source: https://www.kaggle.com/fedesoriano/stroke-prediction-dataset
+- Center for Disease control (https://www.cdc.gov/)
+- World Health Organization (https://www.who.int/)
+
+

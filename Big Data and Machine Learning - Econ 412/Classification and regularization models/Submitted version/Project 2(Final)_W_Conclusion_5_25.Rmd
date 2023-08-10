@@ -1,0 +1,1005 @@
+---
+title: "ECON 412 Project2 (Final)"
+author:
+- Alexander Ramos (ID:605657325)
+- Aneri Patel (ID:305642991)
+- Anshika Sharma (ID:305488635)
+- Cristian Martinez (ID:205642760)
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output:
+  pdf_document:
+    toc: yes
+    fig_height: 4
+    fig_caption: yes
+    highlight: default
+    number_sections: no
+    df_print: paged
+  html_document:
+    toc: yes
+    df_print: paged
+fontfamily: mathpazo
+fontsize: 10.5pt
+editor_options: null
+chunk_output_type: console
+---
+
+########################################
+# I. Introduction
+########################################
+
+The purpose of this project is to analyze two separate datasets using a multitude of Machine Learning algorithms that are classified as classification and regularization algorithms. The dataset that was selected to be used for the classification models is an insurance premium dataset where we are given customer characteristics and are tasked to predict/classify how much their insurance premium expenses will be. For the dataset that will be used with the regularization machine learning algorithms, the group elected to use 2007 ACS data to predict per capita income for each county based on characteristics given. After fitting each model with the selected datasets, accuracy and cross validation results are reported for the models that used a classification framework, along with determining whether a linear or non-linear model is appropriate for our data and bias-variance tradeoff metrics are reported for the regularization models.    
+
+########################################
+# II. Classification (Part 1)
+########################################
+
+```{r,warning=FALSE, message=FALSE, error=FALSE, echo = FALSE}
+# Libraries that will be used to conduct analysis
+library(readxl)
+library(tidyverse)
+library(stats)
+library(ISLR)
+library(nnet)
+library(caret)
+library(MASS)
+library(FNN)
+library(caTools)
+library(class)
+library(stargazer)
+library(fpc)
+```
+
+
+```{r,warning=FALSE, message=FALSE, echo = FALSE}
+# Loading data to conduct analysis
+data = read.csv("insurance.csv")
+```
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Creating Bins that will be used in first classification 
+
+# creating bins for expenses
+data<- data %>% mutate(expenses=case_when(
+  expenses>=1121.87 & expenses<= 20000 ~ "low",
+  expenses>= 20001  & expenses<= 35000 ~ "medium",
+  expenses>= 35001 & expenses<= 63770.43 ~ "high"))
+
+
+# creating bins for age 
+data<- data %>% mutate(age=case_when(
+  age>=18 & age<=28 ~ "18-28",
+  age>=29 & age<=39 ~ "29-39",
+  age>=40 & age<=50 ~ "40-50",
+  age>=51 & age<=60 ~ "51-60",
+  age>=60 ~ "60 and above"))
+
+
+#converting to factors
+data$sex <- as.factor(data$sex)
+data$smoker <- as.factor(data$smoker)
+data$region <- as.factor(data$region)
+data$expenses <- as.factor(data$expenses)
+data$age <- as.factor(data$age) 
+```
+
+We opted to create artificial groupings for the insurance expenses and classify them at three levels: "Low", "Medium", and "High". We performed this modification on our dependent variable to create a 3 factor variable that will be used in our analysis so that we could be able to create predictions that would act as if were tasked to classify individuals into cost groups for insurance premium purposes. We also opted to segment the age variable into artificial groups because we felt that insurance firms in reality perform the same grouping of ages when determining insurance premiums given to customers.
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Summary Statistics of our data 
+summary(data)
+```
+
+Now we will transition to viewing and analyzing the summary statistics for our dataset after we performed the artificial groupings above. As we can see, there are a total of 1,338 observations and for the most, there is a good distribution for observations in the geographical regions along with males and females. As for age, there is a good distribution for age groups 18-60, but the observation count decreases to 91 for individuals 60 and above, but it shouldn't pose any problems for our analysis. BMI reports a mean of 30.67 and 1st and 3rd quantile values of 26.30 and 34.70. As for number of children, the mean is 1.095 and the 1st and 3rd quantile values are 0 and 2 children. Our dependent variable, which again is insurance premium expenses, has a skewness towards low premium expenses of 1065 observations, but it shouldn't pose a problem for our analysis because our models should be able to compensate for the dispersion in observations.    
+
+
+## Exploratory data analysis
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Visualization of dependent variables
+ggplot(data, aes(x = sex, fill = sex)) + geom_bar(stat= "count")
+ggplot(data, aes(x = smoker, fill = smoker)) + geom_bar(stat= "count")
+ggplot(data, aes(x = region, fill = region)) + geom_bar(stat= "count")
+ggplot(data, aes(x = expenses, fill = expenses)) + geom_bar(stat= "count")
+ggplot(data, aes(x = age, fill = age)) + geom_bar(stat= "count")
+```
+
+The plots above provide a visual representation of the data. As can be seen from the gender barplot, the number of males and females are almost the same which implies that the data does not suffer from gender bias. The second graph depicts that the frequency of non-smokers is higher than that of smokers by about 600 people.The third graph provides a visual representation of the regional distribution of people. The fourth barplot suggests that most of the people  in our data set incur low insurance expenses, followed by medium and then high expenses. The last plot shows the distribution of people based on age. Most of the people lie in the age group of 18-28 years.
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#splitting the data (60:40)
+set.seed(123)
+intrain<-createDataPartition(y=data$expenses,p=0.6,list=FALSE)
+train_df<-data[intrain,]
+test_df<-data[-intrain,]
+```
+
+We begin by partitioning the data into a 60-40 framework where 60% of the data will be the training parition and the remaining 40% of the data will be used as the testing data.
+
+## Multinomial Logistic Regression
+
+The Multinomial Logistic Regression is an extension of the classic Logistic Regression model, but is used when the dependent variable has more than two possible discrete outcomes. For the purpose of our analysis, our dependent variable has three possible outcomes. The assumption that is made for the Multinomial Logistic Regression model to be used is that the data that is used is case-specific, meaning each independent variable has a single value for each case. As for the choice for predictors to be used in the model, it is assumed that the dependent variable is independent, which in other words means that one predictor is not related to another. Thus, we felt our data contains characteristics that we feel are independent thus, Multinomial Logistic Regression can be used.
+
+
+We will now fit a Multinomial Logistic model to our data. 
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Testing Logistic Regression Model for Accuracy
+Multi_Logistic.fit= multinom(expenses~ ., data = train_df)
+Multi_Logistic.fit
+
+# Look at coefficients
+exp(coef(Multi_Logistic.fit))
+```
+
+We take the exponential of the coefficients because the Multinomial Logistic Regression model reports the coefficients, but in log outcomes, thus, this mathematical operation provides coefficients that can be interpreted.
+
+As you can see, the Multinomial Logistic Regression reports the coefficients for each predictor, but we understand that these coefficients won't matter if the model reports poor accuracies, thus, we will transition to observe how the model performs when we train it and measure its accuracy against the testing data.
+
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Deriving Prediction based on testing sample
+Multi_Logistic.pred_test = predict(Multi_Logistic.fit, test_df, "class")
+
+Table_Test = table(Multi_Logistic.pred_test,test_df$expenses)
+Table_Test
+
+round((sum(diag(Table_Test))/sum(Table_Test))*100,2) # 90.09% accuracy 
+```
+
+After fitting a Multinomial Logistic model to our data, we wanted to observe the accuracy of the model, thus, using the established training and testing dataset we generated earlier, we used our trained model to predict the actual values of insurance cost premiums. We find that the model performs relatively well with a accuracy of 90.09%. However, we will transition to testing our Mulitnomial Logistic model using a 10-Fold Cross Validation approach because we are concerned about introducing bias due to the 60-40 data partition that was performed to observe how the model performed. 
+
+Below are the results:
+
+```{r, include=FALSE}
+# Performing Cross Validation
+set.seed(2021)
+train.control =trainControl(method="cv", number=10)
+
+Logistic_CV = train(expenses~.,
+               method="multinom",
+               trControl=train.control,
+               metric="accuracy",
+               data=data)
+```
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+Logistic_CV
+```
+
+After performing the 10-Fold Cross Validation technique on the Multinomial Logistic Model, we find that the accuracy derived was 90.73%, which is a marginal improvement compared to 90.09% accruacy that was derived from our prior analysis, which seems to indicate that our model has a high accuracy rate.
+
+We will now perform the same analysis by fitting our data to the Linear Discriminant Analysis (LDA) model.
+
+## Linear Discriminant Analysis (LDA)
+
+Linear discriminant analysis (LDA) is a generalization of Fisher's linear discriminant to find a linear combination of features that characterizes or separates two or more classes of objects or events. The resulting combination may be used as a linear classifier, or, more commonly, for dimensionality reduction before later classification. In this case, LDA will be used for classification. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#fitting the lda model using the training data
+lda.fit=lda(expenses~.,data = train_df)
+lda.fit
+```
+
+we first fit the LDA model on the training data set that was partitioned above. By looking at the prior probabilities, one can tell that maximum observations in our data set lie in the category of low expenses (79%), followed by medium and then high expenses. The coefficients of the linear discriminants define the weights that have been assigned to each of the predictor variables. The higher the absolute values of the weight, the better the predicting power. The proportion of the trace, LD1, is located at where the trace captures the most data variablity; then, trace LD2 is the perpendicular trace to LD1. As the above reslut indicates, our trace LD1 caputures roughly 96% of the data variability. 
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+lda.pred <- predict(lda.fit, test_df) # testing the performance on testing data
+names(lda.pred)
+lda.class=lda.pred$class 
+table(lda.class,test_df$expenses) #confusion matrix 
+mean(lda.class==test_df$expenses) # accuracy for testing = 0.871028
+```
+Next, we test the trained model's performance by running the LDA model on the testing data frame to predict the actual values of insurance cost premiums. The following confusion matrix is obtained. As can be seen, the model performs well with a high accuracy of 87.10%. We have to note that our data is highly imbalanced, and the LDA model is known to be extremely sensitive to the imbalance data. While our original data set comes with 8:1:1 data, low, medium, high respectively, we still improved our classification model with LDA by nearly 7% compared to a model just classifying every point into low. In addition to the special note of the imbalance data, the accuracy rate is marginally lower than the accuracy rate obtained in the Multinomial Logistic Regression Model.
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+plot(lda.fit, col =  as.integer(test_df$expenses))
+```
+The above plot shows what LD1 and LD2 capture in terms of the data variation. As the prior analysis exhibits, LD1 captures about 96% of the data variability, whereas LD2 captures about 4% of the data variability. As mentioned before, the data is highly imbalanced, and that makes it hard to interpret how LDA is splitting the data points with the linear lines in the manner of classifying the data points into the different class from LD1 vs. LD2 plot. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+palette()
+plot(lda.class, col = 1:3)
+```
+The above bar plot displays how many of the data points were classified into the each class by the LDA model. It is clear that our model classifies more data points as low than the other two classes, and that is consistent with the distribution of the original dataset. 
+
+Next, we are plotting our LD1 vs LD2 plot with histogram. It will allow us to show where the data is concentrated for the each class. We will start with displaying what LD1 plane has captured. 
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#plot LD1
+ldahist(lda.pred$x[,1], g = data$expenses) #this can be used #
+#Once plot is decided, we can add the description accordingly.
+```
+As seen in LD1 vs LD2 in the prior analysis, our data is concentrated into two areas, and that is reflected in the location of the data points in the histograms above. The histogram only shows where the data is, in terms of the data concentration in percentage wise. Therefore, the useful information that we can take from the above histogram is that the mode for the each class is not overlapping. That is because our model successfully classifies our testing data set. Meanwhile, the size of the histogram and its spread are displayed at the same size and nearly located, the actual number of the data is very imbalanced, as 8:1:1. Hence, interpreting the histogram in terms of the data concentration, as the percentage, is very crucial.  
+
+
+Similarly, we now display what LD2 has captured. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#plot LD2
+ldahist(lda.pred$x[,2], g = data$expenses) #this can be used #
+```
+
+The logistic of interpreting the histogram above is the same as LD1, but the difference is that LD2 plane is the plane that is perpendicular to LD1. In other words, LD1 is optimized to capture as many data variations as possible while LD2 is just there to compliment LD1. Hence, the LD2 histogram tends to be not showing how the model is separating the classes as clear as the LD1 histogram, and that is what we have here. Yet, we can see the slight locational difference of the mode in the each class from the above LD2 plot.  
+
+To depict a better image of how the model classifys our testing dataset, we will apply dot plot.
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+library(klaR)
+predmodel.test.lda = predict(lda.fit, newdata = test_df)
+
+
+plot(predmodel.test.lda $posterior[,2], predmodel.test.lda $class, col=test_df$expenses, xlab = "Posterior Probability of the Outcome", ylab= "Class" )
+#+10, xlim = c(500,1000),ylim = c(500,1000)
+```
+The dot plot above has three colors, black, green, and red, as we have have three classes. Red is for low. Black is for high. Green is for medium. With the dot  plot, we can see that the LDA model classified them very well as the separation of the all three colors are well depicted. 
+
+Now, we will test our Linear Discriminant Analysis model using a 10-Fold Cross Validation approach because we are concerned about introducing bias due to the 60-40 data partition that was performed to observe how the model performed.
+```{r, , warning=FALSE, message=FALSE, echo = FALSE}
+#k-fold cross validation
+# Define training control
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10)
+
+# Train the model
+lda_cv <- train(expenses~., data = data, method = "lda",
+               trControl = train.control, metric = "accuracy", 
+               na.action=na.exclude)
+# Summarize the results
+print(lda_cv)
+```
+After performing the 10-Fold Cross Validation technique on the LDA model, we find that the accuracy derived is 87.37%, which is a marginal improvement compared to 87.1% accuracy that was derived from our prior analysis, which seems to indicate that our model has a fairly high accuracy rate.
+
+We will now perform the same analysis by fitting our data to a Quadratic Discriminant Analysis (QDA) model.
+
+## Quadratic Discriminant Analysis (QDA)
+
+LDA assumes that the observations within each class are drawn from a multivariate Gaussian distribution and the covariance of the predictor variables are common across all k levels of the response variable Y. Quadratic discriminant analysis (QDA), a variant of LDA, provides an alternative approach. QDA assumes that each class has its own covariance matrix. In other words, the predictor variables are not assumed to have common variance across each of the k levels in Y. QDA is particularly useful if there is prior knowledge that individual classes exhibit distinct covariances.
+
+We first fit the QDA model on the training data set that was partitioned above.
+
+Note: We attempted to correct for data imbalances since QDA does not work with imbalanced data, but the current grouping of our multi-class dependent variable was the only segmentation that QDA accepted. We understand that by having a more balanced dataset, our accuracies could be higher, but we are confident that the accuracies derived using the current segmentation were robust as they are.
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Quadratic Discriminant Analysis
+qda.fit <- qda(expenses~.,data=train_df)
+qda.fit
+```
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+qda.class=predict(qda.fit,test_df)$class
+table(qda.class,test_df$expenses) #confusion matrix
+mean(qda.class==test_df$expenses) # accuracy for testing = 0.8635514
+```
+
+Next, we test the trained model's performance by running the QDA model on the testing data frame to predict the actual values of insurance cost premiums. The following confusion matrix is obtained. As can be seen, the model performs well with a high accuracy of 86.35%. 
+
+
+Now, we will transition to testing our Quadratic Discriminant Analysis model using a 10-Fold Cross Validation approach because we are concerned about introducing bias due to the 60-40 data partition that was performed to observe how the model performed.
+
+```{r, , warning=FALSE, message=FALSE, echo = FALSE}
+#k-fold cross validation
+# Define training control
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10)
+
+# Train the model
+qda_cv <- train(expenses~., data = data, method = "qda",
+                trControl = train.control, metric = "accuracy", na.action=na.exclude)
+# Summarize the results
+print(qda_cv)
+#partimat(expenses ~., data = data, method = "lda")
+```
+After performing the 10-Fold Cross Validation technique on the Multinomial Logistic Model, we find that the accuracy derived is 85.43%, which is a marginal drop compared to 86.35% accruacy that was derived from our prior analysis. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#plot qda
+predmodel.test.qda = predict(qda.fit, newdata = test_df)
+
+
+plot(predmodel.test.qda $posterior[,2], predmodel.test.qda $class, col=test_df$expenses, xlab = "Posterior Probability of the Outcome", ylab= "Class")
+#+10, xlim = c(500,1000),ylim = c(500,1000)
+```
+The above figure shows how the test data has been classified using the QDA model. The plot has three colors, black, green, and red, as we have have three classes. Red is for low. Black is for high. Green is for medium. The Predicted low, medium and high expense categories has been colored with actual classification with red, green and black color. The mix of color in the three categories show the incorrect classification prediction.
+
+Now, we will perform the same analysis for K-Neighbors.
+
+## K-Nearest Neighbors (KNN)
+
+K-Nearest Neighbors (KNN) is a non-parametric method that is used for classification. How the KNN is performed is it uses nearby observations to classify if a new observation would be identified near similar observed observations. This is done by designating one parameter, K, which represents the number of nearby observation or "neighbors" that will be used to classify a new record or in other words observation. This approach of classifying the observation is data-driven and does not require assumptions about the data, which is the non-parametric element in place. Typically, the measured distance that is used when using the KNN is the Euclidean distance, thus, we will normalize our data to ensure that we are in compliance of the model specification. We perform this normalization of the data because we do not want certain predictor variables to dominate the others.  
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Loading dataset
+#data = read_excel("C:/Users/User/Documents/Econometrics Directory/Project_2_Data.xlsx")
+
+# Need to convert all factor variables to numeric in order to perform analysis
+data$sex <- as.numeric(as.factor(data$sex))
+data$smoker <- as.numeric(as.factor(data$smoker))
+data$region <- as.numeric(as.factor(data$region))
+data$expenses <- as.factor(data$expenses)
+data$age <- as.numeric(as.factor(data$age))
+
+str(data)
+```
+
+For KNN to work efficiently, we converted all our predictor variables to numeric variables to ensure the normalization of the data makes logical sense. We still hold onto the concept that was introduced earlier that we are grouping our dependent variable into three insurance cost premium groupings for consistency.  
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# initialize normalized training, validation data, complete data frames to originals
+normalize = function(x) {
+  return((x-min(x))/(max(x)-min(x)))
+}
+data_n = as.data.frame(lapply(data[,c(1,2,3,4,5,6)],normalize))
+
+# Partition data into 60-40 training and testing sets
+data_train = data_n[1:803,]
+data_test = data_n[804:1338,]
+data_train_expenses = data[1:803,7]
+data_test_expenses = data[804:1338,7]
+```
+
+We again partition our normalized data into a 60-40 training and testing datasets to fit and train a KNN model with our data. We begin by fitting the KNN model with a value of 1 for K and observe the accuracy of the model. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Creating Model
+set.seed(7878)
+cl <- data_train_expenses
+KNN_Model <- knn(train = data_train, test = data_test, 
+          cl, k = 1)
+
+#table(data_test_expenses,KNN_Model)
+#Accuracy = (36+400+23)/509
+#Accuracy
+dim(data_train)
+dim(data_train_expenses)
+```
+
+As we can see, we derive an accuracy of 90.18%, which is similar to the accuracy we derived from the Mulitnomial Logistic Regression. However, we simply just used 1 as our K and we are concerned that perhaps there exists an optimal K that would provide us with a better result.
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# initialize a data frame with two columns: k, and accuracy.
+accuracy.df <- data.frame(k = seq(1, 100, 1), accuracy = rep(0, 100))
+
+# compute knn for different k on validation.
+for(i in 1:100) {
+  knn.pred <- knn(train=data_train, test = data_test, 
+                  cl = data_train_expenses, k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, data_test_expenses)$overall[1] 
+}
+
+max(accuracy.df$accuracy,na.rm=T) # Maximum accuracy is 88.79% with k=9
+
+plot(accuracy.df$accuracy,type="l",xlab="K", ylab="Accuracy Score",col="red",
+main = "Deriving The Optimal K")
+```
+
+After trying 100 different values of K, we find the optimal K to be 9 with an associated accuracy of 88.59%. As we can see from the plot, as we increase parameter K, the accuracy begins to decrease, which one can argue that overfitting is present.
+
+We will now transition to performing a 10-Fold Cross Validation because again we are concerned that by partitioning our data, we are introducing bias into our analysis.
+
+
+```{r , warning=FALSE, message=FALSE, echo = FALSE}
+# Performing Cross Validation on Model
+set.seed(2020)
+train.control =trainControl(method="cv", number=10)
+
+KNN_CV = train(expenses~.,
+                  method="knn",
+                  trControl=train.control,
+                  metric="accuracy",
+                  data=data)
+KNN_CV
+```
+
+After performing the 10-Fold Cross Validation analysis, we find that the optimal K parameter is 5, however, we find that the accuracy decreases from 90.18% to 83.78%, which we collectively believe that the cross validation  was correcting for the level of bias we were introducing by partitioning our data initially.  
+
+## K-Means
+
+We will now use our data to fit a K-Means Model and observe how the model performs. The concept behind the K-Means model is that we want to partition our dataset into clusters, where each observation belongs to at least one of the number of clusters, K, we assign. The clusters are non-overlapping, which means that no observation belongs to more than one cluster.  
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+set.seed(3698)
+# K-Means Model
+model.features = data
+
+model.features$expenses = NULL
+model.features_n = as.data.frame(lapply(model.features[,c(1,2,3,4,5,6)],normalize))
+
+K_Means_Model = kmeans(model.features_n,6)
+K_Means_Model
+```
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Attempting to derive the optimal cluster
+Within_Cluster_SS = function(k){
+  kmeans(model.features_n,k,nstart=10)$tot.withinss
+}
+
+k.values = 1:15
+
+Within_Cluster_SS.values = map_dbl(k.values,Within_Cluster_SS)
+plot(k.values,Within_Cluster_SS.values,type="b",pch=20, xlab="Number of Clusters K", 
+ylab="Total Within-Clusters Sum of Squares", main="Optimal Cluster Parameters")
+```
+
+After fitting our data using the K-Means algorithm, we will now determine what our optimal number of clusters will be for our model. However, we first have to determine our criteria that will be used when determining the optimal number of clusters. For our analysis, we look to minimize the total within-cluster variation or in other words, the total within-cluster sum of square. The total within-cluster sum of square measures the compactness of the clustering, thus, we want the numeric value to be as small as possible. To assist us in minimizing the total within-cluster sum of square, we will use the "Elbow Method" where we will fit a number of different clusters and determine the value where the curve will begin to "bend". Thus, base on the results derived above, it appears 4 is the optimal number of clusters to use for our data.
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+set.seed(12345)
+# K-Means Optimal Model using "Elbow Method" 
+model.features = data
+
+model.features$expenses = NULL
+model.features_n = as.data.frame(lapply(model.features[,c(1,2,3,4,5,6)],normalize))
+
+K_Means_Model = kmeans(model.features_n,4)
+
+K_Means_Model
+```
+
+As you can see, the "Within cluster sum of squares by cluster" percentage is reported at 44.4% compared to 64.8% when we designated the number of clusters to be at 6 when we initially fit the data on the model. Thus, it seems that by clustering by four, we have greatly minimized the within cluster sum of squares. However, it should be noted that K-Means is an unsupervised model, thus it is possible that there exists another number of clusters that would decrease the within-cluster sum of squares more, but for now, our analysis states that using a clustering of four is preferred.
+
+Since we cannot derive accuracy metrics based on a cross-validation framework, we will bootstrap our model and observe how it performs based on using the number of clusters of four based on the analysis that was completed above. We performed the bootstrap based on 1000 replications.
+
+
+```{r,include=FALSE}
+# Bootstrapping our K-Means Model
+set.seed(7895)
+K_Means_Boot = clusterboot(model.features_n,B=1000,bootmethod="boot",clustermethod = kmeansCBI,krange=4,seed=2020)
+```
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Observe the Jaccard Coefficients
+K_Means_Boot$bootmean
+```
+
+After we performed the bootstrap on our model, we wanted to observe the Jaccard Coefficients because these coefficients will tell us how stable the clusters are and if the coefficients have a value of 0.5 and greater, then the cluster is deemed important. Thus, based on deriving coefficients that are greater than 0.5, then we can conclude that the number of clusters of 4 is deemed acceptable and every cluster is stable based on the data we are using. 
+
+
+
+
+```{r}
+# Accuracy table of results of all 5 models
+Accuracy_Table = matrix(c("90.09%","90.73%","87.10%","87.37%","86.35%","85.43%","90.18%","83.78%"),ncol=2,byrow=TRUE)
+colnames(Accuracy_Table) = c("Testing Accuracy    ", "Cross Validated Accuracy")
+rownames(Accuracy_Table) = c("Mulitnomial Logistic Regression", "Linear Discriminant Analysis (LDA)","Quadratic Discriminant Analysis (QDA)","K-Nearest Neighbors (KNN)")
+Accuracy_Table = as.table(Accuracy_Table)
+Accuracy_Table
+```
+
+After fitting and evaluating 5 different classification models, we have gathered the training/testing and the cross valuated accuracy rates to summarize our results. Based on the results, it is evident that the Multinomial Logistic Regression is the best model to use based on higher accuracy score achieved. The K-Nearest Neighbors (KNN) model performed marginally better in the training/testing analysis, but the cross validated score notably decreased and actually performed the worse out of the classification models. It should be noted that since we cannot derive accuracy metrics for the K-Means, we omitted K-Means from the table. 
+
+Thus, we conclude that the Multinomial Logistic Regression Model is the best model to use and also conclude that for our data, a linear model is the best to use. We can conclude that the Multinomial Logistic Regression is the appropriate model to use for our data becuase of the high testing and cross validated accuracy scores that were derived.    
+
+\newpage
+
+########################################
+# III. Regularization (Part 2) 
+########################################
+
+## Exploratory Data Analysis
+
+```{r, echo=FALSE, warning=FALSE, message= FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60))
+```
+
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE, include = FALSE}
+library(arules)
+library(caret)
+library(car)
+library(pastecs)
+library(dplyr)
+library(glmnet)
+library(tidyverse)    
+library(kernlab)      
+library(e1071)        
+library(ISLR)        
+library(RColorBrewer) 
+library(vip)
+library(psych)
+library(randomForest)
+library(leaps)
+library(Boruta)
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Reading the data
+df= read.csv("acs2017_county_data.csv")
+```
+
+**Data Description:**
+
+The following data is taken from the DP03 (Selected Economic Characteristics) and DP05 (ACS Demographic and Housing Estimates) tables of the 2017 American Community Survey 5-year estimates. Data is provided for each county or county-equivalent in the US, including DC and Puerto Rico. Counties are political subdivisions, and the boundaries of some have been set for centuries. 
+
+While the data is collected from the US census bureau, we sourced it from Kaggle where it was partially cleaned and uploaded. It consists of 3220 county observations and 34 variables. All feature variables are estimated as percentages of the total population in each county, and the target variable represents the per capita Income per county in 2017. 
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Transforming selected variables
+df$IncomePerCap <- log(df$IncomePerCap)
+df$Women <- df$Women/df$TotalPop
+df$Men <- df$Men/df$TotalPop
+df$VotingAgeCitizen <- df$VotingAgeCitizen/df$TotalPop
+df <- df %>% unite("Index", County:State, sep= ", ", remove = FALSE)
+rownames(df) <- df$Index
+
+#Dropping redundant variables
+data <- subset (df, select = -c(1,2,3,4,14,16,17,18,32,6,33)) 
+
+
+#Nan Check
+data = na.omit(data) #removing nans
+cat("Nans in data:",sum(is.na(data))) #sanity check
+
+#Dataframe structure 
+str(data)
+```
+Some variables- Men, Women and Voting Age Citizen- were given as population estimates in the dataframe. We transformed them to represent percent share of total population in each county.We also changed the dataframe's index to the respective county and state names for each row.
+
+Since the dataset was only partially cleaned when downloaded form kaggle, some redundant variables were present in the dataset. We removed these by using the results from Boruta. Variables including Pacific, State, County, MeanCommute, Income and related error variables. 
+
+After dropping redundant and irrelevant variables and removing the nans, we ended up with a dataset containing 27 variables including the target variable and 3219 observations, the summary statistics of which can be found below:
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Summary Statistics
+stat.desc(data)
+
+#Dependent Variable
+hist(df$IncomePerCap, col="#009999", main= "Per Capita Income (Log Transformation)")
+```
+From the statistical summary above, it is evident that the units of all the quantitative variables, are of comparable magnitudes with the log transformed IncomePerCap (target). The histogram of the log transformed dependent variable shows that the dependent variable is negatively skewed and may require further scaling. Since there were 26 
+
+
+
+
+** Regularization Methods**
+
+Linear regression models comprising of a large number of features may suffer from overfitting, multicollinearity, or may result in a computationally intensive model.Regularization techniques are thus used to regularize or shrink coefficient estimates toward zero which reduces the risk of overfitting and increases model interpretability (especially for datasets with a large number of features). 
+
+Regularization significantly reduces the variance of the model without substantial increase in its bias. Various Regularization models are fitted on the dataset below to determine which model should be preferred for regularization and feature selection. 
+
+
+**Splitting and Scaling the data**
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+set.seed(412)
+
+# Create features and target matrixes
+temp.y <- as.matrix(data$IncomePerCap)
+y <- scale(temp.y, center = TRUE, scale = TRUE)
+X <- as.matrix(subset(data, select = -c(IncomePerCap)))
+
+#Splitting the data
+index <- createDataPartition(temp.y, p=0.60, list=FALSE)
+X_train <- X[ index, ]
+X_test <- X[-index, ]
+y_train <- y[index]
+y_test<-y[-index]
+
+#Preprocessing feature data
+preprocessParams<-preProcess(X_train, method = c("center", "scale"))
+X_train <- predict(preprocessParams, X_train)
+X_test<- predict(preprocessParams, X_test)
+
+hist(y, col="#009999", main= "Per Capita Income (Target Variable)")
+```
+The dataset was randomly split into training (60%) and testing data (40%). Both the features and the target variable were normalized. The train and test features were normalized after splitting them in order to avoid "leaking" any knowledge of testing data while training the model. Feature scaling helped speed up our algorithm's convergence process. 
+
+The histogram of the dependent variable shows that after scaling the y variable, Per capita income is normally distributed for the most part, albeit still slightly negatively skewed. 
+
+
+## Ridge Regression
+
+The first model used for regularization is the Ridge regression. It shrinks the regression coefficients, so that variables, with minor contribution to the outcome, have their coefficients close to zero. The shrinkage of the coefficients is achieved by penalizing the regression model with a penalty term called L2-norm, which is the sum of the squared coefficients.
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Cross validaiton for Hyperparameter tuning
+
+lambdas <- 10^seq(-3, 5, length.out = 100)
+cv_ridge <- cv.glmnet(X_train, y_train, alpha = 0, lambda = lambdas, type.measure = "mse", nfolds=10)
+
+optimal_lambda <- cv_ridge$lambda.min
+cat("Optimal Lambda:",optimal_lambda)
+plot(cv_ridge)
+
+#Final model 
+ridge_model = glmnet(X_train, y_train, alpha = 0, family = 'gaussian', lambda = optimal_lambda)
+```
+The amount of the penalty can be fine-tuned using a constant called lambda. Selecting a good value for lambda is critical.For the purpose of selecting an optimal lambda value, 10 fold cross-validation is performed on the training data. 
+
+The figure above plots the cross validation MSE values as a function of lambda. We see that for the training set, when lambda= 0.01, the MSE is the lowest. The optimal value of the lambda is then used to fit a final ridge model. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Function for computing R^2 and RMSE
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+# Model performance metrics
+data.frame(
+  RMSE = RMSE,
+  Rsquare = R_square,
+  SSE= SSE
+)
+}
+
+#Function for plotting model coefficients
+plot_coeffs <- function(model) {
+  coeffs <- coef(model)
+  coeffs <- coeffs[-1]
+  mp <- barplot(height=coeffs, col="#009999", xaxt='n', main="Regression Coefficients")
+  text(mp, par("usr")[3], labels = colnames(X_train), srt = 90, adj = c(1,0.3), xpd = TRUE, cex=1)
+}
+
+#Plots for ridge
+res <- glmnet(X_train, y_train, alpha = 0, lambda = lambdas, standardize = FALSE)
+plot(res, xvar = "lambda") 
+legend("topright", lwd = 1, legend = colnames(X), cex = 1, col=1:26)
+
+#Regression coefficient plot
+plot_coeffs(ridge_model)
+
+#Variable Imporatance plot
+vip(ridge_model, num_features = 9, geom = "col")
+```
+From the first plot above, we see that most coefficient values eventually converge to zero as the value of lambda increases. 
+
+In the coefficients plot, when we fit the final model with the optimal lambda, we see that it biases most values toward zero. However, child poverty and professional variables persist and have larger magnitude even after the L2 penalty is imposed. This suggests that those variables have a relatively large influence on per-capita income compared to other variables. The results from the variable importance plot are also in close agreement with the inferences drawn from the regression coefficients plot. 
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+set.seed(412)
+# Prediction and evaluation on train data
+predictions_train <- predict(ridge_model, s = optimal_lambda, newx = X_train)
+train_score= eval_results(y_train, predictions_train, cbind(X_train,y_train))
+
+set.seed(412)
+# Prediction and evaluation on test data
+predictions_test <- predict(ridge_model, s = optimal_lambda, newx = X_test)
+test_score= eval_results(y_test, predictions_test, cbind(X_test,y_test))
+
+train_score
+test_score
+```
+When the trained model is applied to the testing data, the R square drops from 87.6% to 86.08% and the RMSE increases from 0.355 to 0.365. Overall, the testing error is quite low and R square is high, explaining 86% of the variability in present in the data.
+
+
+
+## Lasso Regression
+
+Lasso which stands for Least Absolute Shrinkage and Selection Operator is fit on our data. It shrinks the regression coefficients toward zero by penalizing the regression model with a penalty term called L1-norm, which is the sum of the absolute coefficients.
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+set.seed(412)
+
+#Cross validation for hyperparameter tuning
+lambdas <- 10^seq(-3, 5, length.out = 100)
+cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1, lambda = lambdas, type.measure = "mse", nfolds=10)
+plot(cv_lasso)
+
+#Optimal Lambda
+lambda_best <- cv_lasso$lambda.min
+
+
+#Final model
+lasso_model <- glmnet(X_train, y_train, alpha = 1, lambda = lambda_best, standardize = TRUE)
+```
+The plot above shows different values of MSE for increasing values of lambda. After applying 10 fold cross validation on lasso models with all possible lambda values, we find that when lambda is 0.001, the MSE is at it's minimum. This optimal value of lambda is then used to fit a final lasso model on our training data.
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Plots for Lasso
+res <- glmnet(X, y, alpha = 1, lambda = lambdas, standardize = FALSE)
+plot(res, xvar = "lambda", ylim= c(-0.1,0.1), xlim= c(-5,5))
+legend("bottomright", lwd = 1, legend = colnames(X), cex = .8, col=1:26)
+
+#Regression coefficients plot
+plot_coeffs(lasso_model)
+
+#Variable Importance Plot
+vip(lasso_model, num_features = 9, geom = "col")
+```
+
+In the case of lasso regression, the penalty has the effect of forcing some of the coefficient estimates to be exactly equal to zero. After fitting the lasso model on the training data with the optimal lambda value, we find that the following coefficients become exactly zero: 
+
+- Office
+
+- Other transport
+
+- Self-employed
+
+This could indicate that the above mentioned variables may be insignificant in predicting the per-capita income of a county and can be dropped to train a simpler model. 
+
+From the coefficient bar chart and the variable importance plot it is seen that variables including Poverty, Professional, Private work, Men and Native continue to have large coefficients despite the imposition of L1 penalty. This implies that these coefficients may be used to construct a simpler model using fewer features to predict per capita income.  
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Prediction and evaluation on train data
+predictions_train <- predict(lasso_model, s = lambda_best, newx = X_train)
+train_metrics= eval_results(y_train, predictions_train, cbind(X_train, y_train))
+train_metrics
+
+# Prediction and evaluation on test data
+predictions_test <- predict(lasso_model, s = lambda_best, newx = X_test)
+test_metrics= eval_results(y_test, predictions_test, cbind(X_test,y_test))
+test_metrics
+```
+When the trained model is used on the testing data, the R square declines from 87.64% to 86.09%, and the RMSE increases from 0.35 to 0.365. 
+
+
+
+
+## Elastic Net 
+
+Elastic net model combines the penalties of ridge regression and lasso to get the best model fit. Here, alpha is the mixing parameter between ridge (alpha=0) and lasso (alpha=1) 
+
+```{r chunk-name, results="hide", include=FALSE}
+set.seed(412)
+# Set training control
+train_cont <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 3,
+                              search = "random",
+                              verboseIter = TRUE)
+
+set.seed(412)
+# Train the model
+elastic_reg <- train(y_train ~ .,
+                           data= cbind(X_train,y_train),
+                           method = "enet",
+                           tuneLength = 10,
+                           trControl=train_cont)
+
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#plot of elastic net
+plot(elastic_reg)
+
+# Best tuning parameter
+elastic_reg$bestTune
+```
+
+The elastic net model was trained using repeated 10-fold cross validation to find the optimum alpha and lambda values. Alpha value is thus 0.7165254 and lambda value is 0.00003196047. RMSE was used to select the optimal model using the smallest value. 
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Make predictions on training set
+predictions_train <- predict(elastic_reg, X_train)
+eval_results(y_train, predictions_train, cbind(X_train,y_train)) 
+
+# Make predictions on test set
+predictions_test <- predict(elastic_reg, X_test)
+eval_results(y_test, predictions_test, cbind(X_test,y_test)) 
+```
+When the trained model is used on the testing data, the R square declines from 87.67% to 86.08%, and the RMSE increases from 0.355 to 0.365.
+
+
+
+## Principle Component Analysis (PCA)
+
+PCA is one of the dimesionality reduction methods. It allows us to keep only the important information for the classification problems with a trade off of simplicity over accuracy. In other words, PCA allows us to reduce the number of variables in a dataset while conserving its information as much as possible.   
+
+We now fit the training set to PCA.
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# conduct PCA on training dataset
+pca <- prcomp(X_train[,1:26], retx=TRUE, center=TRUE, scale=TRUE) # by deafult, "validation = "CV" included
+summary(pca) # we need PC1:PC14 to capture +90% 
+```
+Fitting PCA on our training set tells us that we attein 91.5% of the information by keeping PC1 through PC14. In other words, we can reduce our dimension to 14 from 26, and by selecting only 14 variables of principle components is adequate for constructing a principal component regression.
+
+```{r, warning=FALSE, message=FALSE, error=FALSE, echo=FALSE, include= FALSE}
+# p<-ggplot(pca,aes(x=PC1, y=PC2, color= y_train ))
+# p<-p+geom_point()
+# p
+```
+
+\newpage
+
+Since combining PC1 and PC2 contains about 35% of the principle information, we will plot PC1 vs PC2 to see how it captures the information. Since ggplot, which is behind the autoplot function, is not supporting prcomp function, we are inserting the plot image below. (The original code that was used to generate the plot is in the rmd file uploaded separately from the report. The line is hash tagged for the formatting purpose.)
+
+```{r, warning=FALSE, message=FALSE, error=FALSE, eval=FALSE,include= FALSE}
+# autoplot(pca, data = pca_train_data, colour = 'y_train')
+```
+
+![autoplot(pca) result](C:/Users/alexd/Desktop/412 GP2/autoplot(pca).png) 
+
+The plot is not showing us complete information as only PC1 and PC2 captures about 35% of the information. However, it shows a clear separability of the information that is obtained by PC1 and PC2 in light and dark blue. Unfortunately, there is no plotting method that allows us to depict 14 dimensional interaction 
+
+Now we will see how much each principle component contains the important information proportionally to the classification model. 
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# percent explained variance
+expl.var <- round(pca$sdev^2/sum(pca$sdev^2)*100) # proportion of variance
+expl.var
+```
+The result above explains that P1 through PC3 contains 46% of the information. However, we need to have 14 principle components in order to have over 90% of the information to our classification model.
+
+Now, we examine the prediction of PCs for validation dataset.
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# prediction of PCs for validation dataset
+pred <- predict(pca, newdata=X_test)
+summary(pred)
+```
+
+Now, we will fit the training set to the principle regression model, PCR, with PC1 through PC14.
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# PCR on training set
+pcr <- lm(y_train~pca$x[,1:14]) # fitting PCs to PCR
+summary(pcr)# R^2 = 0.834
+```
+The PCR uses the principle components to be the explanatory variable against the dependent variable. We obtain the $R^2$ of 0.834. In other words, our model with only 14 dimensions explains about 83% of the data variability of our independent variable, IncomePerCapita. Also, it is noteworthy that PCR typically do not have multicolinearity as PCA avoids the problem of having it. 
+
+As our model, pcr, is created based on the training set, we will predict the value of the dependent variable with the validation set to see the model performance. We will then compare our predicted values on testing set to the true values. 
+```{r, warning=FALSE, message=FALSE, echo = FALSE} 
+# fitting testing set on pcr, validation
+pred.pcr = predict(pcr, data = X_test)
+```
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Plotting the true values vs predicted values
+plot(y_test, ylab="Dependent Variable", lty=1, type="b", pch=1, col="#99ccFF")
+lines(pred.pcr, col="#6699CC", lty=1)
+legend("topright", legend= c("True values","Predicted Values"), col= c("#99ccFF", "#6699CC"), cex= 0.8, lty=1)
+```
+The plot above tells that our predicted value is close to the true value. Hence, the model with only 14 key dimensions of information is good enough to construct a model that explains the data variability on our dependent variable. 
+
+Next, we will optimize the number of principle components in PCR by minimizing the RMSE. 
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+# Build the model on training set
+library(tidyverse)
+library(caret)
+library(pls)
+
+set.seed(412)
+
+pcr.model <- train(
+  y_train~., data = cbind(X_train, y_train), method = "pcr",
+  trControl = trainControl("cv", number = 26),
+  tuneLength = 26
+  )
+# Plot model RMSE vs different values of components
+plot(pcr.model)
+# Print the best tuning parameter ncomp that
+# minimize the cross-validation error, RMSE
+pcr.model$bestTune
+```
+The above chart shows the the optimum number of the principle components to have in our model is 21 based on the cross-validation on our training set. 
+
+We now fit our training set and testing set  to the model with 21 principle components.
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Make predictions on training set
+predictions_train <- predict(pcr.model, X_train)
+eval_results(y_train, predictions_train, cbind(X_train,y_train)) 
+
+# Make predictions on test set
+predictions_test <- predict(pcr.model, X_test)
+eval_results(y_test, predictions_test, cbind(X_test,y_test)) 
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE} 
+# checking the performance of PCR for validation set
+library(performance)
+model_performance(pcr)
+```
+The above three model statistics are coherent with what we expected. Having more principle components in PCR will increase our accuracy, and that will reflect on the $R^2$. Therefore, the model with 21 principle compoenets yeilds higher $R^2$. Also, the model with 21 principle componets has lower RMSE than our hand-picked PCR.
+
+## Support Vector Regression (SVM)
+
+Support vector regression (SVR) is used to find the best fit line, which is a hyperplane that has the maximum number of points. Unlike other regression models that aim to minimize the error between real and predicted value, SVR fits the best fit hyperplane within a threshold value (distance between the hyperplane and boundary line).
+
+For large datasets, like ours, Linear SVR is used since it provides faster implementation than SVR but only considers the linear kernel. 
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+set.seed(412)
+
+#cross validation for parameter selection
+ctrl<- trainControl(method= "cv", number = 5)
+model_svm<- train(y_train~., data=cbind(X_train,y_train), method="svmLinear", trControl= ctrl, tuneGrid = expand.grid(C = seq(1, 5, length = 20)))
+model_svm$finalModel
+set.seed(412)
+
+#Optimal C
+plot(model_svm)
+
+
+#fitting the final model
+final_svm= svm(y_train~., data= cbind(y_train, X_train), kernel="linear", cost=5, epsilon=0.1)
+
+```
+A linear SVM regression model is fitted above after applying 5-fold cross validation on the training data to identify the optimal parameters. Based on the cross validation results, an epsilon SVR (regression) model is fitted with epsilon of 0.1, cost C=5. The C parameter is the penalty parameter of the error term. For large values of C, the optimization will choose a smaller-margin hyperplane and increase prediction accuracy.
+
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+#Training metrics
+predictions_svm_tr <- predict(final_svm, X_train)
+eval_results(y_train, predictions_svm_tr, cbind(X_train,y_train)) 
+
+#Testing metrics
+predictions_svm <- predict(final_svm, X_test)
+eval_results(y_test, predictions_svm, cbind(X_test,y_test)) 
+
+#Plotting the true values vs predicted values
+plot(y_test, ylab="Dependent Variable", lty=1, type="b", pch=1, col="#99ccFF")
+lines(predictions_svm, col="#6699CC", lty=1)
+legend("topright", legend= c("True values","Predicted Values"), col= c("#99ccFF", "#6699CC"), cex= 0.8, lty=1)
+```
+The results from the cross validation are used to train the final model. The final model is then used on the testing data, the R square declines from 87.47% to 86.27%, and the RMSE increases from 0.3584 to 0.3630.
+
+
+
+## Bias-vairance trade-off
+
+The bias–variance trade-off is the property of a model that the variance of the parameter estimates across samples can be reduced by increasing the bias in the estimated parameters. Bias is the difference between the average prediction of our model and the correct value which we are trying to predict. Variance is the variability of model prediction for a given data point or a value which tells us spread of our data. Model with high variance pays a lot of attention to training data and does not generalize on the data which it hasn’t seen before.
+
+In order to minimize the expected test error, we need to select a statistical learning method that simultaneously achieves low variance and low bias. Regularization tends to decrease the variance at the cost of marginally increases bias in the model. Thus, the regularization models were applied to the ACS dataset. The testing scores and RMSE of the models are reported below:
+
+
+Model   |   Testing Score   |  RMSE 
+-------------   | -------------   |   -------------
+Ridge Regression  | 0.8609154  | 0.3653749
+     |  | 
+Lasso Regression  | 0.8609468  | 0.3653336
+     |  |
+Elastic Net  | 0.8608486  | 0.3654627
+     |  |
+Principal Component Analysis  | 0.8611461	  | 0.3650717
+     |  |
+Support Vector Regression  | 0.8627318  | 0.3629813
+-------------   | -------------   |   -------------
+
+Out of all the models, SVR has the highest testing score and the lowest RMSE making it the best model to regularize our data. This is because the trained model generalizes well to the testing data. 
+				
+Although Support Vector Regression is used rarely it carries certain advantages. It is robust to outliers, decision model can be easily updated, it has excellent generalization capability, with high prediction accuracy. This is evident from the results above. 
+
+########################################
+# IV. Conclusion
+########################################
+
+In conclusion, After fitting multiple classification models using our insurance premium data, the Multinomial Logistic Regression performed the best overall compared to the other models. We derived this conclusion by training our models by creating a 60-40 training/testing data split to observe the reported accuracies for all the models (except for K-Means, since it is an unsupervised model, thus, an accuracy ratio cannot be derived). However, we recognized that by performing our 60-40 data split, we were introducing a degree of bias into our analysis, thus, to mitigate any bias created, we performed 10-fold cross validations on every model to observe the accuracies for each model. With the Multinomial Logistic Regression deriving the best cross-validated accuracy score, we concluded that the Multinomial Logistic Regression was the best model to use for our data and that a linear model was more appropriate to use for this data specifically. We understand that the data's dependent variable is imbalanced, but regardless, the models were able to derive high accuracies.
+
+
+
+
+
+########################################
+# V. Future Work
+########################################
+
+When creating our groupings for insurance premiums, we found that the dependent variable was imbalanced, thus, in terms of future work, we believe that implementing the same analysis on a dataset that contains a dependent multiclass variable that is more balance should be the focus since observing predictors that factor into determining insurance premiums is a topic that is worthy of exploring more. We could have approached to fix the imbalance data by applying SMOTE and other techniques. However, the issues with imbalance data were not covered in this course and other courses yet, so we left it as it is, after consulting with Dr. Rojas, to avoid having further issues by synthetically changing our dataset. However, we acknowledge that fixing the imbalance data would greatly improve our classification models, in particular with LDA and QDA.  
+
+
+
+
+########################################
+# VI. Reference 
+########################################
+
+Insurance Premimum Dataset (Classification Data)
+https://www.kaggle.com/noordeen/insurance-premium-prediction
+
+US Census Demographic Data (Regularization Data)
+https://www.kaggle.com/muonneutrino/us-census-demographic-data
+
+
+
+
